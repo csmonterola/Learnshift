@@ -1,0 +1,91 @@
+/* @import url() FONT IMPORTS MUST ALWAYS BE AT THE VERY TOP OF THIS FILE, ABOVE THE TAILWIND IMPORTS — DO NOT DELETE THIS COMMENT */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
+/* CRITICAL: THE FOLLOWING TAILWIND IMPORTS MUST NEVER BE DELETED OR REORDERED — DO NOT DELETE THIS COMMENT */
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+/* END TAILWIND IMPORTS — ALL OTHER CSS MUST GO BELOW THIS LINE */
+
+@layer base {
+  html,
+  body {
+    @apply h-full w-full m-0 p-0;
+  }
+  #root {
+    @apply min-h-full w-full text-gray-800;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* ── Typography scale ─────────────────────────────────────────── */
+
+  /* Page titles  — e.g. "My Subjects", "My Progress" */
+  h1 {
+    @apply text-[28px] font-extrabold tracking-tight text-gray-900 leading-tight;
+  }
+
+  /* Section headings — e.g. card titles */
+  h2 {
+    @apply text-xl font-bold text-gray-900 leading-snug;
+  }
+
+  /* Sub-headings — e.g. subject name inside a card */
+  h3 {
+    @apply text-base font-bold text-gray-900 leading-snug;
+  }
+
+  /* Body text */
+  p {
+    @apply text-sm text-gray-500 leading-relaxed;
+  }
+
+  /* All inputs & textareas */
+  input,
+  textarea,
+  select {
+    @apply font-medium;
+  }
+
+  /* Buttons inherit font */
+  button {
+    @apply font-semibold;
+  }
+}
+
+@layer components {
+  /* ── Reusable label above inputs / sections ── */
+  .label-xs {
+    @apply text-xs font-bold text-gray-500 tracking-wider uppercase;
+  }
+
+  /* ── Stat number inside a card ── */
+  .stat-number {
+    @apply text-3xl font-extrabold text-gray-900 leading-none;
+  }
+
+  /* ── Pill / badge text ── */
+  .badge {
+    @apply text-xs font-bold px-3 py-1 rounded-full;
+  }
+
+  /* ── Teacher UI shared classes ── */
+  .card {
+    @apply bg-white rounded-2xl border border-slate-100 shadow-sm;
+  }
+
+  .status-pill {
+    @apply px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 w-fit;
+  }
+
+  .status-pill.proficient {
+    @apply bg-emerald-50 text-emerald-700 border border-emerald-100;
+  }
+
+  .status-pill.developing {
+    @apply bg-amber-50 text-amber-700 border border-amber-100;
+  }
+
+  .status-pill.beginning {
+    @apply bg-red-50 text-red-700 border border-red-100;
+  }
+}
