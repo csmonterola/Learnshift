@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { useAuth, Role } from '../components/auth/AuthContext'
-import { BookOpen, GraduationCap, Users, User, Lock, Eye, EyeOff } from 'lucide-react'
+import { useAuth, Role } from '../../components/auth/AuthContext'
+import { BookOpen, GraduationCap, Users, User, Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 
 const roles = [
   {
@@ -22,6 +22,12 @@ const roles = [
     label: 'Parent',
     icon: Users,
     desc: "View and support your child's learning",
+  },
+  {
+    id: 'admin' as const,
+    label: 'Admin',
+    icon: ShieldCheck,
+    desc: 'Manage the platform and oversee all users',
   },
 ]
 

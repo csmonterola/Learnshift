@@ -4,7 +4,7 @@ import { AuthProvider } from './components/auth/AuthContext'
 import { StudentLayout } from './components/layout/StudentLayout'
 import { TeacherLayout } from './components/layout/TeacherLayout'
 import { ParentLayout } from './components/layout/ParentLayout'
-import { Landing } from './pages/Landing'
+import { Landing } from './pages/login/Landing'
 
 // ── Student ──────────────────────────────────────────────────────
 import { StudentDashboard }  from './pages/student/Dashboard'
@@ -21,7 +21,14 @@ import { TeacherStudentProfiles } from './pages/teacher/StudentProfiles'
 import { TeacherContentManager }  from './pages/teacher/ContentManager'
 import { TeacherAIMonitoring }    from './pages/teacher/AIMonitoring'
 
-// ── Parent ───────────────────────────────────────────────────────
+import { AdminLayout }            from './components/layout/AdminLayout'
+
+// ── Admin ────────────────────────────────────────────────────────
+import { AdminDashboard }          from './pages/admin/Dashboard'
+import { AdminAccountGeneration }  from './pages/admin/AccountGeneration'
+import { AdminUserDirectory }      from './pages/admin/UserDirectory'
+import { AdminClassManagement }    from './pages/admin/ClassManagement'
+import { AdminSettings }           from './pages/admin/Settings'
 import { ParentDashboard }       from './pages/parent/Dashboard'
 import { ParentCourseMaterials } from './pages/parent/CourseMaterials'
 import { ParentGuidedSessions }  from './pages/parent/GuidedSessions'
@@ -61,6 +68,15 @@ export function App() {
             <Route path="/teacher/settings" element={<Placeholder label="Settings" />} />
           </Route>
 
+          {/* ── Admin ── */}
+          <Route element={<AdminLayout />}>
+            <Route path="/admin"                        element={<AdminDashboard />} />
+            <Route path="/admin/account-generation"     element={<AdminAccountGeneration />} />
+            <Route path="/admin/directory"              element={<AdminUserDirectory />} />
+            <Route path="/admin/classes"                element={<AdminClassManagement />} />
+            <Route path="/admin/settings"               element={<AdminSettings />} />
+          </Route>
+
           {/* ── Parent ── */}
           <Route element={<ParentLayout />}>
             <Route path="/parent"                    element={<ParentDashboard />} />
@@ -68,6 +84,8 @@ export function App() {
             <Route path="/parent/guided-sessions"    element={<ParentGuidedSessions />} />
             <Route path="/parent/settings"           element={<ParentSettings />} />
           </Route>
+
+
         </Routes>
       </BrowserRouter>
     </AuthProvider>
