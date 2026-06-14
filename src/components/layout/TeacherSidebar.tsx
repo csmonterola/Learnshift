@@ -9,12 +9,16 @@ import {
   Settings,
   LogOut,
   Hexagon,
+  MessageCircle,
+  FolderOpen,
 } from 'lucide-react'
 
 const navItems = [
   { path: '/teacher',           icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/teacher/classes',   icon: BookOpen,        label: 'My Classes' },
   { path: '/teacher/students',  icon: Users,           label: 'Student Profiles' },
-  { path: '/teacher/content',   icon: BookOpen,        label: 'Content Manager' },
+  { path: '/teacher/messages',  icon: MessageCircle,   label: 'Messages' },
+  { path: '/teacher/content',   icon: FolderOpen,      label: 'Content Manager' },
   { path: '/teacher/ai-logs',   icon: Bot,             label: 'AI Monitoring' },
   { path: '/teacher/settings',  icon: Settings,        label: 'Settings' },
 ]
@@ -43,7 +47,7 @@ export function TeacherSidebar() {
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-slate-100 border-2 border-emerald-400 flex items-center justify-center overflow-hidden">
             <img
-              src={user?.avatar}
+              src={user?.avatar || 'https://i.pravatar.cc/150?u=default'}
               alt={user?.name}
               className="w-full h-full object-cover"
             />

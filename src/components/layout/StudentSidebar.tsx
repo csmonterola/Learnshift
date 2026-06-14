@@ -11,14 +11,16 @@ import {
   Activity,
   Settings,
   LogOut,
+  Users,
 } from 'lucide-react'
 
 const navItems = [
   { label: 'Dashboard',   icon: LayoutGrid,    path: '/student' },
+  { label: 'My Classes',  icon: Users,         path: '/student/classes' },
   { label: 'My Subjects', icon: BookOpen,       path: '/student/subjects' },
   { label: 'Skill Tree',  icon: GitBranch,      path: '/student/skill-tree' },
   { label: 'Practice',    icon: PlayCircle,     path: '/student/practice' },
-  { label: 'Ask Teacher', icon: MessageCircle,  path: '/student/ask' },
+  { label: 'Messages',    icon: MessageCircle,  path: '/student/messages' },
   { label: 'My Progress', icon: LineChart,      path: '/student/progress' },
   { label: 'Diagnostic',  icon: Activity,       path: '/student/diagnostic' },
   { label: 'Settings',    icon: Settings,       path: '/student/settings' },
@@ -39,7 +41,7 @@ export function StudentSidebar() {
       <div className="flex flex-col items-center pt-10 pb-6 px-6">
         <div className="w-20 h-20 rounded-full bg-emerald-50 mb-4 p-1 overflow-hidden border-2 border-emerald-100">
           <img
-            src={user?.avatar}
+            src={user?.avatar || 'https://i.pravatar.cc/150?u=default'}
             alt={user?.name}
             className="w-full h-full object-cover rounded-full"
           />
@@ -86,12 +88,12 @@ export function StudentSidebar() {
       {/* Bottom */}
       <div className="p-4 mt-auto space-y-3 mb-2">
         <NavLink
-          to="/student/ask"
+          to="/student/messages"
           className="block bg-emerald-100/50 rounded-2xl p-4 hover:bg-emerald-100 transition-colors"
         >
           <p className="text-xs font-semibold text-emerald-700 mb-1">Got a question?</p>
           <p className="text-sm font-bold text-emerald-800 leading-tight">
-            Ask your teacher anonymously &rarr;
+            Message your teacher →
           </p>
         </NavLink>
         <button

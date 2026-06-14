@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuth, Role } from '../../components/auth/AuthContext'
-import { BookOpen, GraduationCap, Users, User, Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react'
+import { BookOpen, GraduationCap, Users, User, Lock, Eye, EyeOff, ShieldCheck, Mail } from 'lucide-react'
 
 const roles = [
   {
@@ -32,19 +32,63 @@ const roles = [
 ]
 
 export function Landing() {
-  const { login } = useAuth()
+  const { login, signUp, user } = useAuth()
   const navigate = useNavigate()
+  const [isSignUp, setIsSignUp] = useState(false)
   const [selectedRole, setSelectedRole] = useState<Role>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Redirect if already logged in
+  React.useEffect(() => {
+    if (user) {
+      const roleRedirects: Record<string, string> = {
+        student: '/student',
+        teacher: '/teacher',
+        admin: '/admin',
+        parent: '/parent',
+      }
+      navigate(roleRedirects[user.role || 'student'] || '/')
+    }
+  }, [user, navigate])
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (selectedRole && email.trim()) {
-      // Use email as the display name for the session
-      login(selectedRole, email.trim())
-      navigate(`/${selectedRole}`)
+    if (!email.trim() || !password.trim()) return
+
+    setError(null)
+    setIsLoading(true)
+
+    try {
+      await login(email.trim(), password)
+      // Navigation will happen via useEffect when user state updates
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Login failed. Please check your credentials.'
+      setError(msg)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedRole || !email.trim() || !password.trim() || !name.trim()) return
+
+    setError(null)
+    setIsLoading(true)
+
+    try {
+      await signUp(name.trim(), email.trim(), password.trim(), selectedRole)
+      // Navigation will happen via useEffect when user state updates
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Sign up failed. Please try again.'
+      setError(msg)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -69,30 +113,59 @@ export function Landing() {
         {/* Header */}
         <div className="mb-8">
           <h2 className="text-[28px] font-bold text-gray-900 mb-2 leading-tight">
-            Welcome Back
+            {isSignUp ? 'Create Account' : 'Welcome Back'}
           </h2>
           <p className="text-gray-500 text-[15px]">
-            Log in to continue your learning experience.
+            {isSignUp ? 'Sign up to start your learning journey.' : 'Log in to continue your learning experience.'}
           </p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-5">
-          {/* Email / Student ID */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="space-y-5">
+          {/* Name (Sign Up only) */}
+          {isSignUp && (
+            <div className="space-y-2">
+              <label htmlFor="name" className="block text-sm font-bold text-gray-700">
+                Full Name
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <User className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="block w-full pl-10 pr-4 py-3.5 bg-gray-50 border border-gray-200/80 rounded-xl text-sm transition-all focus:bg-white focus:border-accent-500 focus:ring-4 focus:ring-accent-500/10 outline-none placeholder:text-gray-400"
+                  placeholder="Enter your full name"
+                  required
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Email */}
           <div className="space-y-2">
             <label htmlFor="email" className="block text-sm font-bold text-gray-700">
-              Email or Student ID
+              Email
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400" />
+                <Mail className="h-5 w-5 text-gray-400" />
               </div>
               <input
-                type="text"
+                type="email"
                 id="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="block w-full pl-10 pr-4 py-3.5 bg-gray-50 border border-gray-200/80 rounded-xl text-sm transition-all focus:bg-white focus:border-accent-500 focus:ring-4 focus:ring-accent-500/10 outline-none placeholder:text-gray-400"
-                placeholder="Enter your email or ID"
+                placeholder="Enter your email"
                 required
               />
             </div>
@@ -127,77 +200,89 @@ export function Landing() {
             </div>
           </div>
 
-          {/* Forgot Password */}
-          <div className="flex justify-end">
-            <a
-              href="#"
-              className="text-sm font-bold text-accent-500 hover:text-accent-600 transition-colors"
-            >
-              Forgot Password?
-            </a>
-          </div>
-
-          {/* Role Selector */}
-          <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">
-              Select Your Role
-            </label>
-            <div className="flex flex-col gap-2.5">
-              {roles.map((role) => {
-                const Icon = role.icon
-                const isSelected = selectedRole === role.id
-                return (
-                  <button
-                    key={role.id}
-                    type="button"
-                    onClick={() => setSelectedRole(role.id)}
-                    className={`relative flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 text-left ${
-                      isSelected
-                        ? 'border-accent-500 bg-accent-50 shadow-sm shadow-accent-500/10'
-                        : 'border-gray-200/80 bg-gray-50 hover:border-accent-300 hover:bg-white'
-                    }`}
-                  >
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+          {/* Role Selector (Sign Up only) */}
+          {isSignUp && (
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-gray-700">Select Your Role</label>
+              <div className="flex flex-col gap-2.5">
+                {roles.map((role) => {
+                  const Icon = role.icon
+                  const isSelected = selectedRole === role.id
+                  return (
+                    <button
+                      key={role.id}
+                      type="button"
+                      onClick={() => setSelectedRole(role.id)}
+                      className={`relative flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 text-left ${
                         isSelected
-                          ? 'bg-accent-500 text-white shadow-sm shadow-accent-500/30'
-                          : 'bg-white text-gray-400 border border-gray-200'
+                          ? 'border-accent-500 bg-accent-50 shadow-sm shadow-accent-500/10'
+                          : 'border-gray-200/80 bg-gray-50 hover:border-accent-300 hover:bg-white'
                       }`}
                     >
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p
-                        className={`text-sm font-bold leading-tight ${
-                          isSelected ? 'text-accent-700' : 'text-gray-800'
+                      <div
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? 'bg-accent-500 text-white shadow-sm shadow-accent-500/30'
+                            : 'bg-white text-gray-400 border border-gray-200'
                         }`}
                       >
-                        {role.label}
-                      </p>
-                      <p
-                        className={`text-xs mt-0.5 leading-snug ${
-                          isSelected ? 'text-accent-500' : 'text-gray-400'
-                        }`}
-                      >
-                        {role.desc}
-                      </p>
-                    </div>
-                    {isSelected && (
-                      <div className="absolute right-4 w-2 h-2 bg-accent-500 rounded-full" />
-                    )}
-                  </button>
-                )
-              })}
+                        <Icon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p
+                          className={`text-sm font-bold leading-tight ${
+                            isSelected ? 'text-accent-700' : 'text-gray-800'
+                          }`}
+                        >
+                          {role.label}
+                        </p>
+                        <p
+                          className={`text-xs mt-0.5 leading-snug ${
+                            isSelected ? 'text-accent-500' : 'text-gray-400'
+                          }`}
+                        >
+                          {role.desc}
+                        </p>
+                      </div>
+                      {isSelected && (
+                        <div className="absolute right-4 w-2 h-2 bg-accent-500 rounded-full" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Forgot Password (Login only) */}
+          {!isSignUp && (
+            <div className="flex justify-end">
+              <a
+                href="#"
+                className="text-sm font-bold text-accent-500 hover:text-accent-600 transition-colors"
+              >
+                Forgot Password?
+              </a>
+            </div>
+          )}
 
           {/* Submit */}
           <button
             type="submit"
-            disabled={!selectedRole || !email.trim()}
+            disabled={
+              isSignUp
+                ? !selectedRole || !email.trim() || !password.trim() || !name.trim() || isLoading
+                : !email.trim() || !password.trim() || isLoading
+            }
             className="w-full flex items-center justify-center bg-accent-500 hover:bg-accent-600 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-accent-500/25 active:scale-[0.98] mt-2"
           >
-            Log In
+            {isLoading ? (
+              'Loading...'
+            ) : isSignUp ? (
+              'Create Account'
+            ) : (
+              'Log In'
+            )}
           </button>
         </form>
 
@@ -211,15 +296,23 @@ export function Landing() {
           </div>
         </div>
 
-        {/* Sign Up */}
+        {/* Toggle Sign Up / Login */}
         <p className="text-center text-[15px] text-gray-500">
-          Don't have an account?{' '}
-          <a
-            href="#"
+          {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+          <button
+            type="button"
+            onClick={() => {
+              setIsSignUp(!isSignUp)
+              setError(null)
+              setEmail('')
+              setPassword('')
+              setName('')
+              setSelectedRole(null)
+            }}
             className="font-bold text-accent-500 hover:text-accent-600 transition-colors"
           >
-            Sign Up
-          </a>
+            {isSignUp ? 'Log In' : 'Sign Up'}
+          </button>
         </p>
       </motion.div>
     </div>
