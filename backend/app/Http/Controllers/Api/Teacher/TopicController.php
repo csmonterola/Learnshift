@@ -150,6 +150,11 @@ class TopicController extends Controller
         $path    = $file->store("lessons/{$lessonId}/materials", 'public');
         $fileUrl = Storage::disk('public')->url($path);
 
+        $fileType = strtoupper($file->getClientOriginalExtension());
+        // Auto-enable AI sync for indexable document types so the RAG pipeline
+        // ingests the material automatically via LearningMaterialObserver.
+        $aiSync = in_array($fileType, ['PDF', 'DOCX', 'PPTX']);
+
         $material = LearningMaterial::create([
             'teacher_id' => $request->user()->id,
             'subject_id' => null,
@@ -158,8 +163,9 @@ class TopicController extends Controller
             'title'      => $request->title ?? $file->getClientOriginalName(),
             'file_path'  => $path,
             'file_name'  => $file->getClientOriginalName(),
-            'file_type'  => strtoupper($file->getClientOriginalExtension()),
+            'file_type'  => $fileType,
             'file_size'  => $file->getSize(),
+            'ai_sync'    => (bool) $aiSync,
         ]);
 
         return response()->json(array_merge($material->toArray(), ['file_url' => $fileUrl]), 201);

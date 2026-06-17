@@ -94,6 +94,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('ask-teacher',                        [ChatbotController::class, 'askTeacher']);
         Route::get('ask-teacher/answers',                 [ChatbotController::class, 'myAnonymousAnswers']);
         Route::post('lessons/{lesson}/chat',              [LessonChatController::class, 'ask']);
+        Route::get('lessons/{lesson}/chat-logs',          [LessonChatController::class, 'logs']);
     });
 
     // ── Parent ───────────────────────────────────────────────────

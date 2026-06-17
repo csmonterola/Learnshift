@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Student;
 
+use App\Exceptions\EmbeddingException;
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use App\Models\LessonChatLog;
@@ -23,8 +24,10 @@ class LessonChatController extends Controller
 
     public function ask(Request $request, Lesson $lesson): JsonResponse
     {
-        $request->validate([
-            'question' => 'required|string|max:2000',
+        $validated = $request->validate([
+            'question'     => 'required|string|max:2000',
+            'material_ids' => 'sometimes|array|max:50',
+            'material_ids.*' => 'integer',
         ]);
 
         $student = $request->user();
@@ -41,15 +44,38 @@ class LessonChatController extends Controller
             );
         }
 
-        $question = $request->input('question');
+        $question    = $validated['question'];
+        $materialIds = $validated['material_ids'] ?? [];
 
-        // Embed the question and retrieve relevant chunks
-        $queryVector = $this->embeddingService->embed($question);
-        $chunks      = $this->retriever->retrieve($lesson->id, $queryVector);
+        // Embed the question; return 502 if the embedding service fails
+        try {
+            $queryVector = $this->embeddingService->embed($question);
+        } catch (EmbeddingException $e) {
+            Log::error('LessonChat embedding failed', [
+                'lesson_id' => $lesson->id,
+                'error'     => $e->getMessage(),
+            ]);
+            return response()->json(
+                ['error' => 'AI service temporarily unavailable. Please try again.'],
+                502
+            );
+        }
 
-        // Determine source and confidence based on retrieval result
-        $source          = $chunks->isNotEmpty() ? 'lesson_materials' : 'general';
-        $confidenceScore = $source === 'lesson_materials' ? 90 : 70;
+        // Retrieve relevant chunks, optionally filtered to specific material IDs
+        $chunks     = $this->retriever->retrieve($lesson->id, $queryVector, 5, $materialIds);
+        $chunkCount = $chunks->count();
+
+        // Three-tier source and confidence logic
+        if ($chunkCount >= 2) {
+            $source          = 'lesson_materials';
+            $confidenceScore = 90;
+        } elseif ($chunkCount === 1) {
+            $source          = 'mixed';
+            $confidenceScore = 80;
+        } else {
+            $source          = 'general';
+            $confidenceScore = 70;
+        }
 
         // Fetch last 5 chat log entries for conversation history (ordered ASC for chronological order)
         $history = LessonChatLog::where('student_id', $student->id)
@@ -59,7 +85,7 @@ class LessonChatController extends Controller
             ->get();
 
         // Build the Mistral messages array
-        $messages = $this->promptBuilder->build($chunks, $history, $question);
+        $messages = $this->promptBuilder->build($chunks, $history, $question, $source);
 
         // Call Mistral AI chat completions
         $apiKey = config('services.mistral.api_key');
@@ -102,22 +128,56 @@ class LessonChatController extends Controller
         $responseText = $mistralResponse->json('choices.0.message.content')
             ?? 'Sorry, I could not generate a response. Please try again.';
 
-        // Persist the chat log
-        $log = LessonChatLog::create([
-            'student_id'            => $student->id,
-            'lesson_id'             => $lesson->id,
-            'question'              => $question,
-            'response'              => $responseText,
-            'source'                => $source,
-            'retrieved_chunk_count' => $chunks->count(),
-            'confidence_score'      => $confidenceScore,
-        ]);
+        // Persist the chat log; log silently on failure and continue
+        $logId = null;
+        try {
+            $log   = LessonChatLog::create([
+                'student_id'            => $student->id,
+                'lesson_id'             => $lesson->id,
+                'question'              => $question,
+                'response'              => $responseText,
+                'source'                => $source,
+                'retrieved_chunk_count' => $chunkCount,
+                'confidence_score'      => $confidenceScore,
+            ]);
+            $logId = $log->id;
+        } catch (\Throwable $e) {
+            Log::warning('LessonChat failed to persist chat log', [
+                'lesson_id'  => $lesson->id,
+                'student_id' => $student->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'response'  => $responseText,
             'source'    => $source,
-            'log_id'    => $log->id,
+            'log_id'    => $logId,
             'lesson_id' => $lesson->id,
         ]);
+    }
+
+    /**
+     * GET /api/student/lessons/{lesson}/chat-logs
+     * Returns the authenticated student's own chat history for this lesson.
+     */
+    public function logs(Request $request, Lesson $lesson): JsonResponse
+    {
+        $student = $request->user();
+
+        $isEnrolled = $lesson->topic->schoolClass->students()
+            ->where('users.id', $student->id)
+            ->exists();
+
+        if (!$isEnrolled) {
+            return response()->json(['error' => 'You are not enrolled in the class for this lesson.'], 403);
+        }
+
+        $logs = LessonChatLog::where('student_id', $student->id)
+            ->where('lesson_id', $lesson->id)
+            ->orderBy('created_at', 'desc')
+            ->paginate(20);
+
+        return response()->json($logs);
     }
 }

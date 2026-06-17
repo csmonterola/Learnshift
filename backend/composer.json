@@ -10,9 +10,9 @@
         "laravel/framework": "^12.0",
         "laravel/sanctum": "*",
         "laravel/tinker": "^2.10.1",
-        "phpoffice/phppresentation": "^1.3",
-        "phpoffice/phpword": "^1.3",
-        "smalot/pdfparser": "^2.10"
+        "phpoffice/phppresentation": "^1.2",
+        "phpoffice/phpword": "^1.4",
+        "smalot/pdfparser": "^2.12"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -46,7 +46,8 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
+            "php artisan serve",
+            "php artisan queue:listen --tries=1 --timeout=0"
         ],
         "test": [
             "@php artisan config:clear --ansi",

@@ -1,37 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { studentApi } from '../../lib/api'
+import { Material } from '../../components/lesson/SourcePanel'
+import ChatPanel from '../../components/lesson/ChatPanel'
 import {
   ChevronRight, FileText, ExternalLink, Download, X, Eye,
-  Link2, Film, Image, File, BookOpen, Send, Bot, User,
+  Link2, Film, Image, File, BookOpen,
   MessageCircle, Dumbbell, Trophy, Lock, CheckCircle,
-  AlertCircle, Paperclip, RefreshCw, Star,
+  AlertCircle, AlertTriangle, Paperclip, RefreshCw, Star,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────
-interface Material {
-  id: number
-  title: string
-  file_name: string
-  file_type: string
-  file_size?: number
-  file_url?: string
-  file_path: string
-}
-
 interface LessonData {
   id: number
   title: string
   content?: string
   materials: Material[]
   links: Material[]
-}
-
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
 }
 
 type ActiveTab = 'chat' | 'practice' | 'quiz'
@@ -113,106 +99,23 @@ function MaterialViewer({ material, onClose }: { material: Material; onClose: ()
   )
 }
 
-// ── Chat Panel ─────────────────────────────────────────────────────
-function ChatPanel({ lessonTitle }: { lessonTitle: string }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: '0',
-      role: 'assistant',
-      content: `Hi! I'm your AI study assistant for **${lessonTitle}**. Ask me anything about this lesson — I'll help you understand it deeply. 📚`,
-    },
-  ])
-  const [input, setInput]   = useState('')
-  const [loading, setLoading] = useState(false)
-  const bottomRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  const send = async () => {
-    if (!input.trim() || loading) return
-    const question = input.trim()
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: question }])
-    setInput('')
-    setLoading(true)
-    try {
-      const res = await studentApi.askChatbot(question)
-      setMessages(prev => [...prev, { id: (Date.now()+1).toString(), role: 'assistant', content: res.data.response }])
-    } catch {
-      setMessages(prev => [...prev, { id: (Date.now()+1).toString(), role: 'assistant', content: "Sorry, I couldn't reach the AI right now. Please try again." }])
-    } finally {
-      setLoading(false)
-    }
+// ── Ingestion Status Badge ─────────────────────────────────────────
+function IngestionBadge({ status }: { status?: string }) {
+  if (status === 'indexed') {
+    return <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Indexed — ready for AI" />
   }
-
+  if (status === 'pending' || status === 'processing') {
+    return <span className="w-2 h-2 rounded-full bg-gray-400 animate-pulse shrink-0" title="Processing…" />
+  }
   return (
-    <div className="flex flex-col h-full">
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map(m => (
-          <div key={m.id} className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {m.role === 'assistant' && (
-              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
-                <Bot className="w-4 h-4 text-emerald-600" />
-              </div>
-            )}
-            <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-              m.role === 'user'
-                ? 'bg-emerald-500 text-white rounded-br-sm'
-                : 'bg-gray-100 text-gray-800 rounded-bl-sm'
-            }`}>
-              {m.content}
-            </div>
-            {m.role === 'user' && (
-              <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center shrink-0 mt-0.5">
-                <User className="w-4 h-4 text-gray-600" />
-              </div>
-            )}
-          </div>
-        ))}
-        {loading && (
-          <div className="flex gap-3 justify-start">
-            <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-              <Bot className="w-4 h-4 text-emerald-600" />
-            </div>
-            <div className="bg-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
-              {[0,150,300].map(d => (
-                <div key={d} className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />
-              ))}
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input */}
-      <div className="p-4 border-t border-gray-100">
-        <div className="flex gap-2 items-end">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            placeholder="Ask about this lesson..."
-            rows={1}
-            disabled={loading}
-            className="flex-1 resize-none bg-gray-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-50"
-            style={{ maxHeight: 120, overflowY: 'auto' }}
-          />
-          <button onClick={send} disabled={!input.trim() || loading}
-            className="w-10 h-10 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white rounded-xl flex items-center justify-center transition-colors shrink-0">
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
-        <p className="text-xs text-gray-400 mt-2 text-center">Powered by Mistral AI · Ask anything about this lesson</p>
-      </div>
-    </div>
+    <span className="flex items-center justify-center" title="Not indexed">
+      <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
+    </span>
   )
 }
 
 // ── Practice Panel ─────────────────────────────────────────────────
 function PracticePanel() {
-  // Placeholder questions — will be wired to real API later
   const questions = [
     {
       id: 1,
@@ -279,7 +182,6 @@ function PracticePanel() {
 
   return (
     <div className="flex flex-col h-full p-5">
-      {/* Progress */}
       <div className="mb-5">
         <div className="flex justify-between text-xs text-gray-400 mb-1.5">
           <span>Question {current + 1} of {questions.length}</span>
@@ -290,13 +192,9 @@ function PracticePanel() {
             style={{ width: `${((current) / questions.length) * 100}%` }} />
         </div>
       </div>
-
-      {/* Question */}
       <div className="bg-gray-50 rounded-2xl p-5 mb-4">
         <p className="font-bold text-gray-900 text-base leading-snug">{q.question}</p>
       </div>
-
-      {/* Options */}
       <div className="space-y-2.5 flex-1">
         {q.options.map((opt, i) => {
           let style = 'bg-white border border-gray-200 text-gray-700 hover:border-emerald-400 hover:bg-emerald-50'
@@ -320,8 +218,6 @@ function PracticePanel() {
           )
         })}
       </div>
-
-      {/* Action */}
       <div className="mt-4">
         {!checked ? (
           <button onClick={handleCheck} disabled={selected === null}
@@ -391,7 +287,6 @@ function QuizPanel() {
   const mastery    = finalPct >= 80 ? 'Mastered' : finalPct >= 60 ? 'Developing' : 'Beginning'
   const masteryColor = finalPct >= 80 ? 'text-emerald-600' : finalPct >= 60 ? 'text-yellow-600' : 'text-red-500'
 
-  // Locked screen
   if (locked && !submitted) {
     const best = Math.max(...pastScores)
     return (
@@ -420,7 +315,6 @@ function QuizPanel() {
     )
   }
 
-  // Start screen
   if (!started) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
@@ -449,7 +343,6 @@ function QuizPanel() {
     )
   }
 
-  // Results screen
   if (submitted) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
@@ -463,7 +356,6 @@ function QuizPanel() {
         </span>
         <p className="text-gray-500 text-sm mb-2">{finalScore} / {questions.length} correct</p>
         <p className="text-xs text-gray-400 mb-6">Attempt {attempts} of {MAX_ATTEMPTS}</p>
-        {/* Answer review */}
         <div className="w-full space-y-2 mb-6 text-left">
           {questions.map((q, i) => (
             <div key={q.id} className={`flex items-start gap-2 p-3 rounded-xl text-xs ${answers[i] === q.correct ? 'bg-emerald-50' : 'bg-red-50'}`}>
@@ -490,7 +382,6 @@ function QuizPanel() {
     )
   }
 
-  // Question screen
   const q = questions[current]
   return (
     <div className="flex flex-col h-full p-5">
@@ -557,11 +448,20 @@ export function StudentLessonView() {
   const [loading, setLoading]       = useState(true)
   const [viewing, setViewing]       = useState<Material | null>(null)
   const [activeTab, setActiveTab]   = useState<ActiveTab>('chat')
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<number>>(new Set())
+
+  // Track materials with ingestion_status from SourcePanel
+  const [materialsWithStatus, setMaterialsWithStatus] = useState<Material[]>([])
 
   useEffect(() => {
     if (!classId || !topicId || !lessonId) return
     studentApi.lesson(Number(classId), Number(topicId), Number(lessonId))
-      .then(res => setLessonData(res.data))
+      .then(res => {
+        setLessonData(res.data)
+        // Initialize with materials from API (without ingestion_status)
+        const mats = (res.data?.materials ?? []).filter((m: Material) => m.file_type !== 'LINK')
+        setMaterialsWithStatus(mats)
+      })
       .catch(err => console.error('Error loading lesson:', err?.response?.data ?? err))
       .finally(() => setLoading(false))
   }, [classId, topicId, lessonId])
@@ -618,7 +518,7 @@ export function StudentLessonView() {
         {/* 3-column body */}
         <div className="flex flex-1 overflow-hidden">
 
-          {/* ── LEFT: Sources / Materials ─────────────────────── */}
+          {/* ── LEFT: Sources / Materials with preview + RAG selection ── */}
           <div className="w-64 shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-sm font-bold text-gray-700">Sources</h2>
@@ -632,36 +532,43 @@ export function StudentLessonView() {
                 </div>
               )}
 
-              {/* Files */}
-              {hasMaterials && lessonData!.materials.map(m => (
-                <div key={m.id}
-                  className="bg-white rounded-xl p-3 border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition-all cursor-pointer group"
-                  onClick={() => canPreview(m.file_type) && m.file_url ? setViewing(m) : window.open(m.file_url, '_blank')}>
-                  <div className="flex items-start gap-2.5">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${fileBg(m.file_type)}`}>
-                      {fileIcon(m.file_type)}
+              {/* Files — with preview buttons AND RAG selection checkbox */}
+              {hasMaterials && lessonData!.materials.map(m => {
+                // Get the ingestion status from the enriched materials list
+                const enriched = materialsWithStatus.find(ms => ms.id === m.id)
+                const status = enriched?.ingestion_status
+                return (
+                  <div key={m.id}
+                    className="bg-white rounded-xl p-3 border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition-all group">
+                    <div className="flex items-start gap-2.5">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${fileBg(m.file_type)}`}>
+                        {fileIcon(m.file_type)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{m.title || m.file_name}</p>
+                        <p className="text-xs text-gray-400 uppercase mt-0.5 flex items-center gap-1.5">
+                          {m.file_type}{m.file_size ? ` · ${formatBytes(m.file_size)}` : ''}
+                          <IngestionBadge status={status} />
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{m.title || m.file_name}</p>
-                      <p className="text-xs text-gray-400 uppercase mt-0.5">{m.file_type}{m.file_size ? ` · ${formatBytes(m.file_size)}` : ''}</p>
+                    <div className="flex gap-1 mt-2">
+                      {canPreview(m.file_type) && m.file_url && (
+                        <button onClick={e => { e.stopPropagation(); setViewing(m) }}
+                          className="flex-1 flex items-center justify-center gap-1 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 py-1.5 rounded-lg transition-colors font-medium">
+                          <Eye className="w-3 h-3" /> View
+                        </button>
+                      )}
+                      {m.file_url && (
+                        <a href={m.file_url} download={m.file_name} onClick={e => e.stopPropagation()}
+                          className="flex-1 flex items-center justify-center gap-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 py-1.5 rounded-lg transition-colors font-medium">
+                          <Download className="w-3 h-3" /> Save
+                        </a>
+                      )}
                     </div>
                   </div>
-                  <div className="flex gap-1 mt-2">
-                    {canPreview(m.file_type) && m.file_url && (
-                      <button onClick={e => { e.stopPropagation(); setViewing(m) }}
-                        className="flex-1 flex items-center justify-center gap-1 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 py-1.5 rounded-lg transition-colors font-medium">
-                        <Eye className="w-3 h-3" /> View
-                      </button>
-                    )}
-                    {m.file_url && (
-                      <a href={m.file_url} download={m.file_name} onClick={e => e.stopPropagation()}
-                        className="flex-1 flex items-center justify-center gap-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 py-1.5 rounded-lg transition-colors font-medium">
-                        <Download className="w-3 h-3" /> Save
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
 
               {/* Links */}
               {hasLinks && (
@@ -687,7 +594,6 @@ export function StudentLessonView() {
 
           {/* ── CENTER: Chat / Practice / Quiz tabs ───────────── */}
           <div className="flex-1 flex flex-col overflow-hidden bg-white">
-            {/* Tab bar */}
             <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100 shrink-0">
               {tabs.map(tab => (
                 <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -700,12 +606,17 @@ export function StudentLessonView() {
               ))}
             </div>
 
-            {/* Tab content */}
             <div className="flex-1 overflow-hidden">
               <AnimatePresence mode="wait">
                 <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15 }} className="h-full">
-                  {activeTab === 'chat'     && <ChatPanel lessonTitle={lessonData?.title ?? 'this lesson'} />}
+                  {activeTab === 'chat' && (
+                    <ChatPanel
+                      lessonTitle={lessonData?.title ?? 'this lesson'}
+                      lessonId={Number(lessonId)}
+                      selectedMaterialIds={selectedMaterialIds}
+                    />
+                  )}
                   {activeTab === 'practice' && <PracticePanel />}
                   {activeTab === 'quiz'     && <QuizPanel />}
                 </motion.div>
@@ -719,7 +630,6 @@ export function StudentLessonView() {
               <h2 className="text-sm font-bold text-gray-700">Lesson Info</h2>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Title card */}
               <div className="bg-white rounded-xl p-4 border border-gray-200">
                 <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center mb-3">
                   <BookOpen className="w-5 h-5 text-emerald-600" />
@@ -728,7 +638,6 @@ export function StudentLessonView() {
                 <p className="text-xs text-gray-400">{(lessonData?.materials?.length ?? 0)} file{(lessonData?.materials?.length ?? 0) !== 1 ? 's' : ''} · {(lessonData?.links?.length ?? 0)} link{(lessonData?.links?.length ?? 0) !== 1 ? 's' : ''}</p>
               </div>
 
-              {/* Notes */}
               {lessonData?.content && (
                 <div className="bg-white rounded-xl p-4 border border-gray-200">
                   <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Teacher Notes</h4>
@@ -740,7 +649,6 @@ export function StudentLessonView() {
                 </div>
               )}
 
-              {/* Learning path hint */}
               <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-100">
                 <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-3">Learning Path</h4>
                 <div className="space-y-2.5">

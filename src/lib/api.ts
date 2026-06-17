@@ -66,6 +66,15 @@ export const studentApi = {
   submitDiagnostic: (data: object) => api.post('/student/diagnostic/submit', data),
   askChatbot: (question: string, subjectId?: number) =>
     api.post('/student/chatbot/ask', { question, subject_id: subjectId }),
+  getLessonMaterials: (classId: number, topicId: number, lessonId: number) =>
+    api.get(`/student/classes/${classId}/topics/${topicId}/lessons/${lessonId}`),
+  askLessonChat: (lessonId: number, question: string, materialIds?: number[]) => {
+    const body: { question: string; material_ids?: number[] } = { question }
+    if (materialIds && materialIds.length > 0) {
+      body.material_ids = materialIds
+    }
+    return api.post(`/student/lessons/${lessonId}/chat`, body)
+  },
   chatbotHistory: () => api.get('/student/chatbot/history'),
   askTeacher: (teacherId: number, question: string, subjectId?: number) =>
     api.post('/student/ask-teacher', { teacher_id: teacherId, question, subject_id: subjectId }),

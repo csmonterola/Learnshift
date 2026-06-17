@@ -25,8 +25,9 @@ class IngestLearningMaterialJob implements ShouldQueue
 
     /**
      * The number of seconds the job can run before timing out.
+     * Extended to 300 s (5 minutes) for large PPTX/DOCX files (Requirement 2.10).
      */
-    public int $timeout = 120;
+    public int $timeout = 300;
 
     public function __construct(
         private readonly int $materialId
@@ -42,11 +43,20 @@ class IngestLearningMaterialJob implements ShouldQueue
         try {
             $material->update(['ingestion_status' => 'processing']);
 
-            // Resolve the absolute file path from the storage disk
-            $filePath = Storage::path($material->file_path);
+            // Resolve the absolute file path from the public storage disk
+            $filePath = Storage::disk('public')->path($material->file_path);
 
             // Extract plain text from the file
             $text = $extractor->extract($filePath, $material->file_type);
+
+            // Guard: if extraction yields no usable text, mark as failed and bail out (Requirement 2.3)
+            if (trim($text) === '') {
+                Log::warning('IngestLearningMaterialJob: extracted text is empty', [
+                    'material_id' => $this->materialId,
+                ]);
+                $material->update(['ingestion_status' => 'failed']);
+                return;
+            }
 
             // Chunk the text (500 tokens max, 50 token overlap)
             $chunks = $chunker->chunk($text);
