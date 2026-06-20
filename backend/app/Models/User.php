@@ -82,4 +82,14 @@ class User extends Authenticatable
     {
         return $this->hasMany(ActivityLog::class, 'user_id');
     }
+
+    public function lessonProgress()
+    {
+        return $this->hasMany(StudentLessonProgress::class, 'student_id');
+    }
+
+    public function quizResults()
+    {
+        return $this->hasMany(QuizResult::class, 'student_id');
+    }
 }

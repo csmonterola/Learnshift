@@ -59,6 +59,9 @@ export const studentApi = {
 
   skillTree: (subjectId: number, gradeLevel: string) =>
     api.get('/skill-tree', { params: { subject_id: subjectId, grade_level: gradeLevel } }),
+  getPracticeClasses: () => api.get('/student/practice/classes'),
+  generatePractice: (lessonIds: number[], count?: number) =>
+    api.post('/student/practice/generate', { lesson_ids: lessonIds, count }),
   getQuestions: (topicId: number) => api.get(`/student/practice/${topicId}/questions`),
   submitPractice: (data: object) => api.post('/student/practice/submit', data),
   practiceHistory: () => api.get('/student/practice/history'),
@@ -79,6 +82,37 @@ export const studentApi = {
   askTeacher: (teacherId: number, question: string, subjectId?: number) =>
     api.post('/student/ask-teacher', { teacher_id: teacherId, question, subject_id: subjectId }),
   myAnswers: () => api.get('/student/ask-teacher/answers'),
+
+  // Lesson Practice (AI-generated, NOT saved)
+  generatePracticeQuestions: (lessonId: number) =>
+    api.post(`/student/lessons/${lessonId}/practice/generate`),
+  submitPracticeAnswers: (lessonId: number, answers: number[], questions: object[]) =>
+    api.post(`/student/lessons/${lessonId}/practice/submit`, { answers, questions }),
+
+  // Lesson Quiz (AI-generated, saved, max 3 attempts)
+  generateQuizQuestions: (lessonId: number) =>
+    api.post(`/student/lessons/${lessonId}/quiz/generate`),
+  submitQuizAnswers: (lessonId: number, answers: number[], questions: object[]) =>
+    api.post(`/student/lessons/${lessonId}/quiz/submit`, { answers, questions }),
+  getQuizHistory: (lessonId: number) =>
+    api.get(`/student/lessons/${lessonId}/quiz/history`),
+
+  // Skill Tree
+  getSkillTree: (classId: number) =>
+    api.get(`/student/classes/${classId}/skill-tree`),
+
+  // Progress
+  getProgress: () => api.get('/student/progress'),
+
+  // Contacts
+  getTeachers: () => api.get('/student/contacts/teachers'),
+
+  // Messages
+  getConversations: () => api.get('/messages/conversations'),
+  getMessages: (userId: number) => api.get(`/messages/${userId}`),
+  sendMessage: (receiverId: number, content: string) =>
+    api.post('/messages', { receiver_id: receiverId, content }),
+  getUnreadCount: () => api.get('/messages/unread-count'),
 }
 
 // ── Teacher ───────────────────────────────────────────────────────
@@ -91,6 +125,12 @@ export const teacherApi = {
   classStudents: (classId: number) => api.get(`/teacher/classes/${classId}/students`),
   enrollStudent: (classId: number, studentId: number) => api.post(`/teacher/classes/${classId}/students`, { student_id: studentId }),
   removeStudent: (classId: number, studentId: number) => api.delete(`/teacher/classes/${classId}/students/${studentId}`),
+
+  // Teacher Class Management
+  getMyClasses: () => api.get('/teacher/classes'),
+  createClass: (data: { name: string; grade_level: string; section: string; school_year: string; subject: string }) =>
+    api.post('/teacher/classes', data),
+  deleteMyClass: (classId: number) => api.delete(`/teacher/classes/${classId}`),
 
   // Topics
   getTopics: (classId: number) => api.get(`/teacher/classes/${classId}/topics`),
@@ -124,12 +164,30 @@ export const teacherApi = {
     api.post('/teacher/content', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   updateContent: (id: number, data: object) => api.put(`/teacher/content/${id}`, data),
   deleteContent: (id: number) => api.delete(`/teacher/content/${id}`),
+  reprocessContent: (id: number) => api.post(`/teacher/content/${id}/reprocess`),
+  getContentLessons: (classId?: number) => api.get('/teacher/content/lessons', { params: { class_id: classId } }),
   aiLogs: (status?: string) => api.get('/teacher/ai-logs', { params: { status } }),
   updateLogStatus: (id: number, status: string, note?: string) =>
     api.patch(`/teacher/ai-logs/${id}/status`, { status, teacher_note: note }),
   anonymousQuestions: () => api.get('/teacher/anonymous-questions'),
   answerQuestion: (id: number, answer: string) =>
     api.post(`/teacher/anonymous-questions/${id}/answer`, { answer }),
+
+  // Class Progress Monitoring
+  getClassProgress: (classId: number) =>
+    api.get(`/teacher/classes/${classId}/progress`),
+  getTopicProgress: (classId: number, topicId: number) =>
+    api.get(`/teacher/classes/${classId}/progress/topics/${topicId}`),
+
+  // Contacts
+  getContacts: () => api.get('/teacher/contacts'),
+
+  // Messages
+  getConversations: () => api.get('/messages/conversations'),
+  getMessages: (userId: number) => api.get(`/messages/${userId}`),
+  sendMessage: (receiverId: number, content: string) =>
+    api.post('/messages', { receiver_id: receiverId, content }),
+  getUnreadCount: () => api.get('/messages/unread-count'),
 }
 
 // ── Parent ────────────────────────────────────────────────────────

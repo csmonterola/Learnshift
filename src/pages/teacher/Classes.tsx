@@ -1,15 +1,22 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { useAuth } from '../../components/auth/AuthContext'
-import { classes, subjects } from '../../lib/supabaseApi'
-import type { Class, Subject } from '../../lib/supabaseTypes'
-import { Plus, BookOpen, Users, Calendar, MapPin, ChevronRight, Trash2, Edit } from 'lucide-react'
+import { teacherApi } from '../../lib/api'
+import { Plus, BookOpen, Users, ChevronRight, Trash2 } from 'lucide-react'
+
+interface ClassItem {
+  id: number
+  name: string
+  grade_level: string
+  section: string
+  school_year: string
+  subject: string
+  teacher_id: number
+  is_active: boolean
+}
 
 export function TeacherClasses() {
-  const { user } = useAuth()
-  const [teacherClasses, setTeacherClasses] = useState<Class[]>([])
-  const [allSubjects, setAllSubjects] = useState<Subject[]>([])
+  const [teacherClasses, setTeacherClasses] = useState<ClassItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newClass, setNewClass] = useState({
@@ -21,21 +28,16 @@ export function TeacherClasses() {
   })
 
   useEffect(() => {
-    if (user) {
-      loadData()
-    }
-  }, [user])
+    loadData()
+  }, [])
 
   const loadData = async () => {
+    setLoading(true)
     try {
-      const [classesData, subjectsData] = await Promise.all([
-        classes.getTeacherClasses(user!.id),
-        subjects.getAll(),
-      ])
-      setTeacherClasses(classesData)
-      setAllSubjects(subjectsData)
+      const res = await teacherApi.getMyClasses()
+      setTeacherClasses(res.data || [])
     } catch (error) {
-      console.error('Error loading data:', error)
+      console.error('Error loading classes:', error)
     } finally {
       setLoading(false)
     }
@@ -45,19 +47,9 @@ export function TeacherClasses() {
     if (!newClass.name || !newClass.grade_level || !newClass.section || !newClass.subject || !newClass.school_year) return
 
     try {
-      await classes.create({
-        ...newClass,
-        teacher_id: user!.id,
-        is_active: true,
-      } as any)
+      await teacherApi.createClass(newClass)
       setShowCreateModal(false)
-      setNewClass({
-        name: '',
-        grade_level: '',
-        section: '',
-        school_year: '',
-        subject: '',
-      })
+      setNewClass({ name: '', grade_level: '', section: '', school_year: '', subject: '' })
       loadData()
     } catch (error) {
       console.error('Error creating class:', error)
@@ -67,7 +59,7 @@ export function TeacherClasses() {
   const handleDeleteClass = async (classId: number) => {
     if (!confirm('Are you sure you want to delete this class?')) return
     try {
-      await classes.delete(classId)
+      await teacherApi.deleteMyClass(classId)
       loadData()
     } catch (error) {
       console.error('Error deleting class:', error)
@@ -77,7 +69,7 @@ export function TeacherClasses() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500" />
       </div>
     )
   }
@@ -146,6 +138,9 @@ export function TeacherClasses() {
                     <Users className="w-4 h-4" />
                     <span>{cls.subject}</span>
                   </div>
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <span>S.Y. {cls.school_year}</span>
+                  </div>
                 </div>
 
                 <Link
@@ -169,7 +164,7 @@ export function TeacherClasses() {
             className="bg-white rounded-2xl p-8 w-full max-w-md"
           >
             <h2 className="text-2xl font-bold text-gray-900 mb-6">Create New Class</h2>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Class Name</label>
@@ -226,7 +221,6 @@ export function TeacherClasses() {
                   placeholder="e.g., 2025-2026"
                 />
               </div>
-
             </div>
 
             <div className="flex gap-3 mt-8">

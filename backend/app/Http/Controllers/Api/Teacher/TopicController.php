@@ -165,7 +165,7 @@ class TopicController extends Controller
             'file_name'  => $file->getClientOriginalName(),
             'file_type'  => $fileType,
             'file_size'  => $file->getSize(),
-            'ai_sync'    => (bool) $aiSync,
+            'ai_sync'    => $aiSync,
         ]);
 
         return response()->json(array_merge($material->toArray(), ['file_url' => $fileUrl]), 201);

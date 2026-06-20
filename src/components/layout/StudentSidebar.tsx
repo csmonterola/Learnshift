@@ -3,7 +3,6 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import {
   LayoutGrid,
-  BookOpen,
   GitBranch,
   PlayCircle,
   MessageCircle,
@@ -17,7 +16,6 @@ import {
 const navItems = [
   { label: 'Dashboard',   icon: LayoutGrid,    path: '/student' },
   { label: 'My Classes',  icon: Users,         path: '/student/classes' },
-  { label: 'My Subjects', icon: BookOpen,       path: '/student/subjects' },
   { label: 'Skill Tree',  icon: GitBranch,      path: '/student/skill-tree' },
   { label: 'Practice',    icon: PlayCircle,     path: '/student/practice' },
   { label: 'Messages',    icon: MessageCircle,  path: '/student/messages' },

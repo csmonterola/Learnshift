@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use App\Models\LearningMaterial;
 use App\Models\SchoolClass;
+use App\Models\StudentLessonProgress;
 use App\Models\Topic;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class ClassController extends Controller
@@ -44,6 +46,7 @@ class ClassController extends Controller
 
     /**
      * Get topics for a class (student must be enrolled).
+     * Now includes per-topic mastery for the current student.
      */
     public function topics(Request $request, int $classId)
     {
@@ -57,13 +60,39 @@ class ClassController extends Controller
         $topics = Topic::where('class_id', $classId)
             ->orderBy('order_index')
             ->withCount('lessons')
-            ->get();
+            ->get()
+            ->map(function ($topic) use ($student) {
+                // Get lesson IDs for this topic
+                $lessonIds = DB::table('lessons')->where('topic_id', $topic->id)->pluck('id');
+
+                $progress = StudentLessonProgress::where('student_id', $student->id)
+                    ->whereIn('lesson_id', $lessonIds)
+                    ->get();
+
+                $totalLessons = $lessonIds->count();
+                $completedLessons = $progress->where('status', 'completed')->count();
+                $masteredLessons = $progress->where('mastery_percentage', 100)->count();
+                // Divide by TOTAL lessons (not just attempted ones) so unattempted lessons count as 0%
+                $avgMastery = $totalLessons > 0 ? (int) round($progress->sum('mastery_percentage') / $totalLessons) : 0;
+
+                return [
+                    'id'                 => $topic->id,
+                    'title'              => $topic->title,
+                    'description'        => $topic->description,
+                    'order_index'        => $topic->order_index,
+                    'lesson_count'       => $topic->lessons_count,
+                    'mastery_percentage' => $avgMastery,
+                    'completed_lessons'  => $completedLessons,
+                    'mastered_lessons'   => $masteredLessons,
+                    'total_lessons'      => $totalLessons,
+                ];
+            });
 
         return response()->json($topics);
     }
 
     /**
-     * Get a single topic with its lessons.
+     * Get a single topic with its lessons, including per-lesson mastery.
      */
     public function topic(Request $request, int $classId, int $topicId)
     {
@@ -75,10 +104,42 @@ class ClassController extends Controller
 
         $topic = Topic::where('id', $topicId)
             ->where('class_id', $classId)
-            ->with(['lessons' => fn($q) => $q->orderBy('order')])
             ->firstOrFail();
 
-        return response()->json($topic);
+        // Get lessons with mastery data
+        $lessons = DB::table('lessons')
+            ->where('topic_id', $topicId)
+            ->orderBy('order')
+            ->get()
+            ->map(function ($lesson) use ($student) {
+                $progress = StudentLessonProgress::where('student_id', $student->id)
+                    ->where('lesson_id', $lesson->id)
+                    ->first();
+
+                return [
+                    'id'                 => $lesson->id,
+                    'title'              => $lesson->title,
+                    'content'            => $lesson->content,
+                    'order'              => $lesson->order,
+                    'status'             => $progress?->status ?? 'not_started',
+                    'mastery_percentage' => $progress?->mastery_percentage ?? 0,
+                    'best_quiz_score'    => $progress?->best_quiz_score,
+                ];
+            });
+
+        // Calculate topic mastery
+        $topicLessonCount = $lessons->count();
+        $topicAvg = $topicLessonCount > 0
+            ? (int) round($lessons->avg('mastery_percentage'))
+            : 0;
+
+        return response()->json([
+            'id'                 => $topic->id,
+            'title'              => $topic->title,
+            'description'        => $topic->description,
+            'mastery_percentage' => $topicAvg,
+            'lessons'            => $lessons,
+        ]);
     }
 
     /**

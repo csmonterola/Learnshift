@@ -31,4 +31,9 @@ class LearningMaterial extends Model
     {
         return $this->belongsTo(Topic::class);
     }
+
+    public function lesson()
+    {
+        return $this->belongsTo(Lesson::class, 'lesson_id');
+    }
 }

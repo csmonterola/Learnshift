@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { TeacherTopBar } from '../../components/layout/TeacherTopBar'
+import { teacherApi } from '../../lib/api'
 import {
   FileText,
   UploadCloud,
@@ -9,158 +9,363 @@ import {
   Trash2,
   CheckCircle2,
   Database,
+  RefreshCw,
+  AlertCircle,
+  Clock,
+  File as FileIcon,
+  X,
+  Loader2,
+  BookOpen,
+  ChevronDown,
 } from 'lucide-react'
 
-const initialFiles = [
-  { id: 1, name: 'Fractions_Module.pdf',           subject: 'Mathematics', size: '2.4 MB', pages: 18, date: 'Apr 15, 2026', synced: true },
-  { id: 2, name: 'Cell_Structure_Lesson.pdf',       subject: 'Science',     size: '5.1 MB', pages: 32, date: 'Apr 12, 2026', synced: false },
-  { id: 3, name: 'LinearEquations_Worksheet.pdf',   subject: 'Mathematics', size: '1.8 MB', pages: 12, date: 'Apr 10, 2026', synced: true },
-]
+interface ContentItem {
+  id: number
+  title: string
+  file_name: string
+  file_type: string
+  file_size: number
+  file_path: string
+  file_url: string
+  ai_sync: boolean
+  ingestion_status: string
+  created_at: string
+  updated_at: string
+  subject: string
+  class_name: string
+  class_id: number
+  topic: string
+  topic_id: number
+  lesson: string
+  lesson_id: number
+}
+
+interface LessonOption {
+  id: number
+  title: string
+  topic_title: string
+  class_name: string
+  class_id: number
+}
+
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+const ingestionBadge = (status: string) => {
+  switch (status) {
+    case 'indexed':
+      return { color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle2, label: 'Indexed' }
+    case 'processing':
+      return { color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Loader2, label: 'Processing' }
+    case 'failed':
+      return { color: 'bg-red-100 text-red-700 border-red-200', icon: AlertCircle, label: 'Failed' }
+    default:
+      return { color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Clock, label: 'Pending' }
+  }
+}
 
 export function TeacherContentManager() {
-  const [files, setFiles] = useState(initialFiles)
+  const [materials, setMaterials] = useState<ContentItem[]>([])
+  const [lessons, setLessons] = useState<LessonOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [showUpload, setShowUpload] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [newLessonId, setNewLessonId] = useState<number | ''>('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const toggleSync = (id: number) => {
-    setFiles(files.map((f) => f.id === id ? { ...f, synced: !f.synced } : f))
+  useEffect(() => {
+    loadData()
+    loadLessons()
+  }, [])
+
+  const loadData = async () => {
+    try {
+      const res = await teacherApi.content()
+      setMaterials(res.data || [])
+    } catch (err) {
+      console.error('Error loading content:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const syncedCount = files.filter((f) => f.synced).length
+  const loadLessons = async () => {
+    try {
+      const res = await teacherApi.getContentLessons()
+      setLessons(res.data || [])
+    } catch (err) {
+      console.error('Error loading lessons:', err)
+    }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setSelectedFile(file)
+      if (!newTitle) {
+        setNewTitle(file.name.replace(/\.[^/.]+$/, ''))
+      }
+    }
+  }
+
+  const handleUpload = async () => {
+    if (!selectedFile || !newLessonId) {
+      setError('Please select a file and a lesson.')
+      return
+    }
+
+    setUploading(true)
+    setError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', selectedFile)
+      formData.append('title', newTitle)
+      formData.append('lesson_id', String(newLessonId))
+
+      await teacherApi.uploadContent(formData)
+      await loadData()
+      setShowUpload(false)
+      setSelectedFile(null)
+      setNewTitle('')
+      setNewLessonId('')
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Delete this material?')) return
+    try {
+      await teacherApi.deleteContent(id)
+      setMaterials(prev => prev.filter(m => m.id !== id))
+    } catch (err) {
+      console.error('Error deleting material:', err)
+    }
+  }
+
+  const handleReprocess = async (id: number) => {
+    try {
+      await teacherApi.reprocessContent(id)
+      setMaterials(prev => prev.map(m => m.id === id ? { ...m, ingestion_status: 'pending' } : m))
+    } catch (err) {
+      console.error('Error reprocessing:', err)
+    }
+  }
+
+  const syncedCount = materials.filter(m => m.ingestion_status === 'indexed').length
+
+  // Group materials by subject → topic directly from the material's own data
+  // This ensures ALL materials show up even if the lessons dropdown doesn't have them
+  // Group materials by class name → topic directly from the material's own data
+  const groupedMaterials = materials.reduce((acc, material) => {
+    const className = material.class_name && material.class_name !== 'N/A' ? material.class_name : (material.subject || 'Other')
+    const topicName = material.topic && material.topic !== 'N/A' ? material.topic : 'General'
+
+    if (!acc[className]) acc[className] = {}
+    if (!acc[className][topicName]) acc[className][topicName] = []
+    acc[className][topicName].push(material)
+    return acc
+  }, {} as Record<string, Record<string, ContentItem[]>>)
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <TeacherTopBar
-        leftContent={
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center">
-              <UploadCloud size={18} />
+    <div className="max-w-6xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Content Manager</h1>
+          <p className="text-gray-500 text-sm">Upload and manage learning materials with AI indexing status.</p>
+        </div>
+        <button onClick={() => setShowUpload(true)}
+          className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-medium flex items-center gap-2 transition-colors shadow-sm">
+          <UploadCloud size={18} /> Upload Material
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          { label: 'Total Materials', value: materials.length, color: 'bg-blue-50 text-blue-500', textColor: 'text-blue-600', icon: FileText },
+          { label: 'Indexed to AI', value: syncedCount, color: 'bg-emerald-50 text-emerald-500', textColor: 'text-emerald-600', icon: Database },
+          { label: 'Processing', value: materials.filter(m => m.ingestion_status === 'processing').length, color: 'bg-blue-50 text-blue-500', textColor: 'text-blue-600', icon: Loader2 },
+          { label: 'Pending', value: materials.filter(m => m.ingestion_status === 'pending' || m.ingestion_status === 'failed').length, color: 'bg-amber-50 text-amber-500', textColor: 'text-amber-600', icon: Clock },
+        ].map((stat) => (
+          <div key={stat.label} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${stat.color}`}>
+              <stat.icon size={16} />
             </div>
             <div>
-              <div className="font-semibold text-slate-800 leading-tight">Content Manager</div>
-              <div className="text-xs text-slate-500">Upload & sync learning materials</div>
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{stat.label}</div>
+              <div className={`text-lg font-bold leading-none ${stat.textColor}`}>{stat.value}</div>
             </div>
           </div>
-        }
-      />
+        ))}
+      </div>
 
-      <main className="flex-1 p-8 max-w-5xl mx-auto w-full">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 mb-1">Content Manager</h1>
-          <p className="text-slate-500 text-sm">
-            Upload and manage your learning materials. Sync them to the AI Chatbot Knowledge Base for instant student support.
-          </p>
-        </div>
+      {/* Upload Modal */}
+      {showUpload && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={e => e.target === e.currentTarget && setShowUpload(false)}>
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Upload Material</h2>
+              <button onClick={() => setShowUpload(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-        {/* Stats */}
-        <div className="flex gap-4 mb-8">
-          {[
-            { label: 'Total Files',  value: files.length,              color: 'bg-blue-50 text-blue-500',    textColor: 'text-blue-600',    icon: FileText },
-            { label: 'Synced to AI', value: syncedCount,               color: 'bg-emerald-50 text-emerald-500', textColor: 'text-emerald-600', icon: Database },
-            { label: 'Not Synced',   value: files.length - syncedCount, color: 'bg-slate-100 text-slate-500',  textColor: 'text-slate-600',   icon: Database },
-          ].map((stat) => (
-            <div key={stat.label} className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex items-center gap-3 shadow-sm">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${stat.color}`}>
-                <stat.icon size={16} />
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-4">{error}</div>
+            )}
+
+            <div className="space-y-4">
+              {/* File Drop Zone */}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center hover:border-emerald-400 hover:bg-emerald-50/30 transition-colors cursor-pointer"
+              >
+                <input ref={fileInputRef} type="file" onChange={handleFileSelect} accept=".pdf,.docx,.pptx,.doc,.ppt,.txt" className="hidden" />
+                {selectedFile ? (
+                  <div>
+                    <FileText className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+                    <p className="font-medium text-gray-900">{selectedFile.name}</p>
+                    <p className="text-xs text-gray-500">{formatFileSize(selectedFile.size)}</p>
+                  </div>
+                ) : (
+                  <div>
+                    <UploadCloud className="w-10 h-10 text-gray-400 mx-auto mb-2" />
+                    <p className="font-medium text-gray-900">Drop a file or click to browse</p>
+                    <p className="text-xs text-gray-500 mt-1">PDF, DOCX, PPTX up to 50MB</p>
+                  </div>
+                )}
               </div>
+
+              {/* Title */}
               <div>
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</div>
-                <div className={`text-lg font-bold leading-none ${stat.textColor}`}>{stat.value}</div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  placeholder="Material title" />
+              </div>
+
+              {/* Lesson Select */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Lesson</label>
+                <select value={newLessonId} onChange={e => setNewLessonId(Number(e.target.value))}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
+                  <option value="">Select a lesson...</option>
+                  {lessons.map(l => (
+                    <option key={l.id} value={l.id}>
+                      {l.class_name} → {l.topic_title} → {l.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button onClick={handleUpload} disabled={uploading || !selectedFile || !newLessonId}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+                {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud size={18} />}
+                {uploading ? 'Uploading...' : 'Upload Material'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Materials List */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500" />
+        </div>
+      ) : materials.length === 0 ? (
+        <div className="bg-white rounded-3xl p-16 text-center shadow-sm border border-gray-100">
+          <UploadCloud className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-gray-900 mb-2">No Materials Yet</h3>
+          <p className="text-gray-500 mb-6">Upload your first learning material to get started.</p>
+          <button onClick={() => setShowUpload(true)}
+            className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-medium inline-flex items-center gap-2 transition-colors">
+            <UploadCloud size={18} /> Upload Material
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(groupedMaterials).map(([className, topics]) => (
+            <div key={className}>
+              <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-emerald-500" /> {className}
+              </h2>
+              <div className="text-xs text-gray-400 mb-2">Subject: {materials.find(m => m.class_name === className)?.subject || className}</div>
+              <div className="space-y-4">
+                {Object.entries(topics).map(([topicName, topicMaterials]) => (
+                  <div key={topicName} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                    <div className="px-6 py-3 bg-gray-50 border-b border-gray-100">
+                      <h3 className="font-semibold text-gray-700 text-sm">{topicName}</h3>
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                      {topicMaterials.map((material) => {
+                        const badge = ingestionBadge(material.ingestion_status)
+                        return (
+                          <div key={material.id} className="px-6 py-4 flex items-center justify-between group hover:bg-gray-50/50 transition-colors">
+                            <div className="flex items-center gap-4 flex-1 min-w-0">
+                              <div className="w-10 h-12 bg-red-50 rounded flex flex-col items-center justify-center text-red-500 border border-red-100 relative shrink-0">
+                                <FileText size={20} />
+                                <span className="text-[8px] font-bold mt-0.5 bg-red-500 text-white px-1 rounded-sm absolute -bottom-1.5">{material.file_type}</span>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-semibold text-gray-900 truncate">{material.title}</div>
+                                <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+                                  <span>{material.lesson}</span>
+                                  <span>·</span>
+                                  <span>{formatFileSize(material.file_size)}</span>
+                                  <span>·</span>
+                                  <span>{new Date(material.created_at).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-4 shrink-0">
+                              {/* Ingestion Status */}
+                              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${badge.color}`}>
+                                <badge.icon size={12} className={badge.label === 'Processing' ? 'animate-spin' : ''} />
+                                {badge.label}
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {material.ingestion_status !== 'processing' && (
+                                  <button onClick={() => handleReprocess(material.id)}
+                                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Reprocess">
+                                    <RefreshCw size={15} />
+                                  </button>
+                                )}
+                                <button onClick={() => handleDelete(material.id)}
+                                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Delete">
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
         </div>
-
-        {/* Upload Zone */}
-        <div className="border-2 border-dashed border-slate-300 rounded-3xl bg-white p-12 flex flex-col items-center justify-center text-center mb-12 hover:border-emerald-400 hover:bg-emerald-50/30 transition-colors cursor-pointer">
-          <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500 mb-4">
-            <UploadCloud size={32} />
-          </div>
-          <h3 className="text-lg font-bold text-slate-900 mb-2">Drag & Drop your files here</h3>
-          <p className="text-sm text-slate-500 mb-6 max-w-sm">
-            Upload PDF modules, lesson guides, worksheets, or supplementary materials.
-            Supported: <strong className="text-slate-700">.pdf, .docx, .pptx</strong>
-          </p>
-          <button className="bg-emerald-400 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl font-medium flex items-center gap-2 transition-colors shadow-sm shadow-emerald-200">
-            <UploadCloud size={18} /> Browse Files
-          </button>
-          <p className="text-xs text-slate-400 mt-4">Max file size: 50 MB per file · Files are encrypted and stored securely</p>
-        </div>
-
-        {/* File List */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <h2 className="font-bold text-slate-900">Uploaded Learning Materials</h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-xs font-medium border border-emerald-100">
-                {files.length} files
-              </span>
-            </div>
-            <div className="px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-100 flex items-center gap-1.5">
-              <Database size={14} /> {syncedCount} of {files.length} files synced to AI Chatbot
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {files.map((file) => (
-              <div key={file.id} className="card p-4 flex items-center justify-between group hover:border-emerald-200 transition-colors">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-12 bg-red-50 rounded flex flex-col items-center justify-center text-red-500 border border-red-100 relative">
-                    <FileText size={20} />
-                    <span className="text-[8px] font-bold mt-0.5 bg-red-500 text-white px-1 rounded-sm absolute -bottom-1.5">PDF</span>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-900 mb-1">{file.name}</div>
-                    <div className="flex items-center gap-3 text-xs text-slate-500">
-                      <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium">{file.subject}</span>
-                      <span>{file.size}</span>
-                      <span>·</span>
-                      <span>{file.pages} pages</span>
-                      <span>·</span>
-                      <span>Uploaded {file.date}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-8">
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"><Eye size={16} /></button>
-                    <button className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"><Download size={16} /></button>
-                    <button className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
-                  </div>
-
-                  <div className="flex items-center gap-4 border-l border-slate-100 pl-8">
-                    {file.synced ? (
-                      <div className="status-pill proficient bg-emerald-50/50 border-emerald-100/50">
-                        <CheckCircle2 size={14} /> Synced
-                      </div>
-                    ) : (
-                      <div className="status-pill bg-slate-100 text-slate-500 border-slate-200">Not synced</div>
-                    )}
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <div className="text-xs font-semibold text-slate-700">Sync to AI Chatbot</div>
-                        <div className="text-[10px] text-slate-400">Knowledge Base</div>
-                      </div>
-                      <button
-                        onClick={() => toggleSync(file.id)}
-                        className={`w-12 h-6 rounded-full relative transition-colors flex items-center px-1 ${file.synced ? 'bg-emerald-400' : 'bg-slate-200'}`}
-                      >
-                        <motion.div
-                          layout
-                          className="w-4 h-4 bg-white rounded-full shadow-sm flex items-center justify-center"
-                          animate={{ x: file.synced ? 24 : 0 }}
-                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                        >
-                          {file.synced && <Database size={10} className="text-emerald-500" />}
-                        </motion.div>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </main>
+      )}
     </div>
   )
 }

@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api\Teacher;
 use App\Http\Controllers\Controller;
 use App\Models\SchoolClass;
 use App\Models\User;
+use App\Models\StudentLessonProgress;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class StudentController extends Controller
 {
@@ -22,25 +24,89 @@ class StudentController extends Controller
         return response()->json($students);
     }
 
+    /**
+     * GET /api/teacher/students
+     *
+     * Returns all students enrolled in classes taught by the current teacher.
+     * Each student includes:
+     *  - class info (grade_level, section, class_name) from the class they're enrolled in
+     *  - overall_mastery calculated from actual StudentLessonProgress
+     *  - status based on mastery score
+     */
     public function index(Request $request)
     {
         $teacher = $request->user();
 
-        $classIds = $teacher->taughtClasses()->pluck('id');
+        // Get the teacher's class IDs
+        $teacherClassIds = $teacher->taughtClasses()->pluck('id');
 
-        $students = User::whereHas('enrolledClasses', fn($q) => $q->whereIn('classes.id', $classIds))
-            ->with(['studentProfile', 'subjectMastery.subject', 'topicProgress.topic'])
+        // Get students enrolled in those classes, with class info
+        $students = User::where('role', 'student')
+            ->whereHas('enrolledClasses', fn($q) => $q->whereIn('classes.id', $teacherClassIds))
             ->when($request->search, fn($q) => $q->where('name', 'like', '%' . $request->search . '%'))
             ->get()
-            ->map(function ($student) {
-                $profile  = $student->studentProfile;
-                $mastery  = $student->subjectMastery->avg('mastery_score') ?? 0;
-                $score    = $profile?->diagnostic_score ?? $mastery;
+            ->map(function ($student) use ($teacherClassIds) {
+                // Get the classes this student is enrolled in that belong to this teacher
+                $studentClasses = $student->enrolledClasses()
+                    ->whereIn('classes.id', $teacherClassIds)
+                    ->get();
 
-                return array_merge($student->toArray(), [
-                    'overall_mastery' => round($mastery, 1),
-                    'status'          => $score >= 80 ? 'Excelling' : ($score >= 70 ? 'On Track' : 'At Risk'),
-                ]);
+                // Extract grade_level and section from the first matching class
+                $gradeLevel = null;
+                $section = null;
+                $className = null;
+                $studentClassId = null;
+
+                if ($studentClasses->isNotEmpty()) {
+                    $firstClass = $studentClasses->first();
+                    $gradeLevel = $firstClass->grade_level;
+                    $section = $firstClass->section;
+                    $className = $firstClass->name;
+                    $studentClassId = $firstClass->id;
+                }
+
+                // If no class found, fall back to student profile
+                if (!$gradeLevel) {
+                    $profile = $student->studentProfile;
+                    $gradeLevel = $profile?->grade_level;
+                    $section = $profile?->section;
+                }
+
+                // Calculate overall mastery from actual lesson progress
+                // across all lessons in the teacher's classes this student is enrolled in
+                $overallMastery = 0;
+                if ($studentClassId) {
+                    $lessonIds = DB::table('lessons')
+                        ->join('topics', 'lessons.topic_id', '=', 'topics.id')
+                        ->where('topics.class_id', $studentClassId)
+                        ->pluck('lessons.id');
+
+                    $totalLessons = $lessonIds->count();
+
+                    if ($totalLessons > 0) {
+                        $masterySum = StudentLessonProgress::where('student_id', $student->id)
+                            ->whereIn('lesson_id', $lessonIds)
+                            ->sum('mastery_percentage');
+
+                        $overallMastery = (int) round($masterySum / $totalLessons);
+                    }
+                }
+
+                $score = $overallMastery;
+
+                return [
+                    'id'                 => $student->id,
+                    'name'               => $student->name,
+                    'email'              => $student->email,
+                    'avatar'             => $student->avatar,
+                    'enrollment_code'    => $student->enrollment_code,
+                    'is_active'          => $student->is_active,
+                    'grade_level'        => $gradeLevel,
+                    'section'            => $section,
+                    'class_name'         => $className,
+                    'overall_mastery'    => $overallMastery,
+                    'status'             => $score >= 80 ? 'Excelling' : ($score >= 70 ? 'On Track' : ($score > 0 ? 'Developing' : 'Not Started')),
+                ];
             });
 
         return response()->json($students);
@@ -82,8 +148,7 @@ class StudentController extends Controller
 
         $request->validate(['student_id' => 'required|integer|exists:users,id']);
 
-        // Use DB query directly for consistency with classStudents
-        \DB::table('class_student')->insertOrIgnore([
+        DB::table('class_student')->insertOrIgnore([
             'class_id' => $classId,
             'student_id' => $request->student_id,
             'enrolled_at' => now(),
@@ -100,7 +165,7 @@ class StudentController extends Controller
             ->where('teacher_id', $teacher->id)
             ->firstOrFail();
 
-        \DB::table('class_student')
+        DB::table('class_student')
             ->where('class_id', $classId)
             ->where('student_id', $studentId)
             ->delete();
@@ -112,7 +177,6 @@ class StudentController extends Controller
     {
         return response()->json(
             $student->load([
-                'studentProfile',
                 'subjectMastery.subject',
                 'topicProgress.topic.quarter',
                 'practiceAttempts' => fn($q) => $q->latest()->take(10),

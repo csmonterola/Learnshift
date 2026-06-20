@@ -28,4 +28,9 @@ class SchoolClass extends Model
         return $this->belongsToMany(User::class, 'class_student', 'class_id', 'student_id')
                     ->withPivot('enrolled_at');
     }
+
+    public function topics()
+    {
+        return $this->hasMany(Topic::class, 'class_id')->orderBy('order_index');
+    }
 }

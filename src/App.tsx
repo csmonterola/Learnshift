@@ -21,7 +21,6 @@ import { StudentTopicPage } from './pages/student/TopicPage'
 import { StudentLessonView } from './pages/student/LessonView'
 import { StudentNotebook } from './pages/student/Notebook'
 import { StudentMessages } from './pages/student/Messages'
-import { StudentSubjects } from './pages/student/Subjects'
 import { StudentSkillTree } from './pages/student/SkillTree'
 import { StudentPractice } from './pages/student/Practice'
 import { StudentProgress } from './pages/student/Progress'
@@ -74,7 +73,6 @@ export function App() {
               <Route path="/student/class/:classId/topic/:topicId/lesson/:lessonId" element={<StudentLessonView />} />
               <Route path="/student/class/:classId/topic/:topicId/lesson/:lessonId/notebook" element={<StudentNotebook />} />
               <Route path="/student/messages" element={<StudentMessages />} />
-              <Route path="/student/subjects" element={<StudentSubjects />} />
               <Route path="/student/skill-tree" element={<StudentSkillTree />} />
               <Route path="/student/practice" element={<StudentPractice />} />
               <Route path="/student/progress" element={<StudentProgress />} />

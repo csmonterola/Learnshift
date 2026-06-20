@@ -6,62 +6,135 @@ use App\Http\Controllers\Controller;
 use App\Models\LearningMaterial;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 
 class ContentController extends Controller
 {
     public function index(Request $request)
     {
-        return response()->json(
-            LearningMaterial::where('teacher_id', $request->user()->id)
-                ->with(['subject', 'topic'])
-                ->latest()
-                ->get()
-        );
+        $materials = LearningMaterial::where('teacher_id', $request->user()->id)
+            ->with(['lesson.topic.schoolClass', 'subject'])
+            ->latest()
+            ->get()
+            ->map(function ($material) {
+                $class = $material->lesson?->topic?->schoolClass;
+                return [
+                    'id'               => $material->id,
+                    'title'            => $material->title,
+                    'file_name'        => $material->file_name,
+                    'file_type'        => $material->file_type,
+                    'file_size'        => $material->file_size,
+                    'file_path'        => $material->file_path,
+                    'file_url'         => $material->file_type !== 'LINK' ? Storage::disk('public')->url($material->file_path) : $material->file_path,
+                    'ai_sync'          => $material->ai_sync,
+                    'ingestion_status' => $material->ingestion_status ?? 'pending',
+                    'created_at'       => $material->created_at,
+                    'updated_at'       => $material->updated_at,
+                    'subject'          => $class?->subject ?? 'N/A',
+                    'class_name'       => $class?->name ?? ($material->subject?->name ?? 'N/A'),
+                    'class_id'         => $class?->id,
+                    'topic'            => $material->lesson?->topic?->title ?? 'N/A',
+                    'topic_id'         => $material->lesson?->topic?->id,
+                    'lesson'           => $material->lesson?->title ?? 'N/A',
+                    'lesson_id'        => $material->lesson_id,
+                ];
+            });
+
+        return response()->json($materials);
     }
 
     public function store(Request $request)
     {
         $request->validate([
-            'title'      => 'required|string',
-            'subject_id' => 'required|exists:subjects,id',
-            'topic_id'   => 'nullable|exists:topics,id',
-            'file'       => 'required|file|mimes:pdf,docx,pptx,doc,ppt|max:20480',
-            'ai_sync'    => 'boolean',
+            'title'      => 'required|string|max:255',
+            'lesson_id'  => 'required|exists:lessons,id',
+            'file'       => 'required|file|mimes:pdf,docx,pptx,doc,ppt,txt|max:51200',
         ]);
+
+        // Verify ownership
+        $lesson = DB::table('lessons')
+            ->join('topics', 'lessons.topic_id', '=', 'topics.id')
+            ->join('classes', 'topics.class_id', '=', 'classes.id')
+            ->where('lessons.id', $request->lesson_id)
+            ->where('classes.teacher_id', $request->user()->id)
+            ->select('lessons.id')
+            ->first();
+
+        if (!$lesson) {
+            return response()->json(['message' => 'Lesson not found or unauthorized.'], 403);
+        }
 
         $file = $request->file('file');
-        $path = $file->store('materials', 'public');
+        $path = $file->store("lessons/{$request->lesson_id}/materials", 'public');
 
         $material = LearningMaterial::create([
-            'teacher_id' => $request->user()->id,
-            'subject_id' => $request->subject_id,
-            'topic_id'   => $request->topic_id,
-            'title'      => $request->title,
-            'file_path'  => $path,
-            'file_name'  => $file->getClientOriginalName(),
-            'file_type'  => strtoupper($file->getClientOriginalExtension()),
-            'file_size'  => $file->getSize(),
-            'ai_sync'    => $request->boolean('ai_sync'),
+            'teacher_id'       => $request->user()->id,
+            'lesson_id'        => $request->lesson_id,
+            'title'            => $request->title,
+            'file_path'        => $path,
+            'file_name'        => $file->getClientOriginalName(),
+            'file_type'        => strtoupper($file->getClientOriginalExtension()),
+            'file_size'        => $file->getSize(),
+            'ingestion_status' => 'pending',
         ]);
 
-        return response()->json($material->load(['subject', 'topic']), 201);
+        return response()->json($material->load(['lesson.topic.schoolClass', 'subject']), 201);
     }
 
     public function update(Request $request, LearningMaterial $material)
     {
-        $this->authorize('update', $material);
+        if ($material->teacher_id !== $request->user()->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
-        $material->update($request->only(['title', 'ai_sync', 'topic_id']));
-        return response()->json($material->load(['subject', 'topic']));
+        $material->update($request->only(['title', 'lesson_id']));
+        return response()->json($material->load(['lesson.topic.schoolClass', 'subject']));
     }
 
-    public function destroy(LearningMaterial $material)
+    public function destroy(Request $request, LearningMaterial $material)
     {
-        $this->authorize('delete', $material);
+        if ($material->teacher_id !== $request->user()->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
-        Storage::disk('public')->delete($material->file_path);
+        if ($material->file_type !== 'LINK') {
+            Storage::disk('public')->delete($material->file_path);
+        }
         $material->delete();
 
         return response()->json(['message' => 'Material deleted.']);
+    }
+
+    public function reprocess(Request $request, LearningMaterial $material)
+    {
+        if ($material->teacher_id !== $request->user()->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $material->update([
+            'ingestion_status' => 'pending',
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['message' => 'Material queued for reprocessing.']);
+    }
+
+    public function lessons(Request $request)
+    {
+        $teacher = $request->user();
+        $classId = $request->query('class_id');
+
+        $lessons = DB::table('lessons')
+            ->join('topics', 'lessons.topic_id', '=', 'topics.id')
+            ->join('classes', 'topics.class_id', '=', 'classes.id')
+            ->where('classes.teacher_id', $teacher->id)
+            ->when($classId, fn($q) => $q->where('classes.id', $classId))
+            ->select('lessons.id', 'lessons.title', 'topics.title as topic_title', 'classes.name as class_name', 'classes.id as class_id')
+            ->orderBy('classes.name')
+            ->orderBy('topics.title')
+            ->orderBy('lessons.title')
+            ->get();
+
+        return response()->json($lessons);
     }
 }

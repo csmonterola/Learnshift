@@ -10,12 +10,21 @@ use App\Http\Controllers\Api\Teacher\ContentController as TeacherContentControll
 use App\Http\Controllers\Api\Teacher\AIMonitoringController;
 use App\Http\Controllers\Api\Teacher\LessonChatLogController;
 use App\Http\Controllers\Api\Teacher\TopicController as TeacherTopicController;
+use App\Http\Controllers\Api\Teacher\TeacherClassController;
 use App\Http\Controllers\Api\Student\DashboardController as StudentDashboardController;
 use App\Http\Controllers\Api\Student\ClassController as StudentClassController;
 use App\Http\Controllers\Api\Student\PracticeController;
 use App\Http\Controllers\Api\Student\DiagnosticController;
 use App\Http\Controllers\Api\Student\ChatbotController;
 use App\Http\Controllers\Api\Student\LessonChatController;
+use App\Http\Controllers\Api\Student\QuizController;
+use App\Http\Controllers\Api\Student\LessonPracticeController;
+use App\Http\Controllers\Api\Student\ProgressController as StudentProgressController;
+use App\Http\Controllers\Api\Student\SkillTreeController as StudentSkillTreeController;
+use App\Http\Controllers\Api\Student\ContactController as StudentContactController;
+use App\Http\Controllers\Api\Teacher\ContactController as TeacherContactController;
+use App\Http\Controllers\Api\MessageController;
+use App\Http\Controllers\Api\Teacher\ClassProgressController;
 use App\Http\Controllers\Api\ParentPortal\DashboardController as ParentDashboardController;
 use Illuminate\Support\Facades\Route;
 
@@ -28,6 +37,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me',      [AuthController::class, 'me']);
+
+    // ── Messages (shared) ────────────────────────────────────────
+    Route::get('messages/conversations',              [MessageController::class, 'conversations']);
+    Route::get('messages/{userId}',                   [MessageController::class, 'getMessages']);
+    Route::post('messages',                           [MessageController::class, 'send']);
+    Route::get('messages/unread-count',               [MessageController::class, 'unreadCount']);
 
     // ── Curriculum (shared) ──────────────────────────────────────
     Route::get('/subjects',                               [CurriculumController::class, 'subjects']);
@@ -48,11 +63,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('dashboard',                           [TeacherDashboardController::class, 'index']);
         Route::get('students/search',                     [TeacherStudentController::class, 'searchStudents']);
         Route::get('students',                            [TeacherStudentController::class, 'index']);
+        Route::get('students/{student}',                  [TeacherStudentController::class, 'show']);
+
+        // Teacher Class Management (exact matches before parameterized)
+        Route::get('classes',                             [TeacherClassController::class, 'index']);
+        Route::post('classes',                            [TeacherClassController::class, 'store']);
         Route::get('classes/{classId}',                   [TeacherStudentController::class, 'classDetail']);
         Route::get('classes/{classId}/students',          [TeacherStudentController::class, 'classStudents']);
         Route::post('classes/{classId}/students',         [TeacherStudentController::class, 'enrollStudent']);
         Route::delete('classes/{classId}/students/{studentId}', [TeacherStudentController::class, 'removeStudent']);
-        Route::get('students/{student}',                  [TeacherStudentController::class, 'show']);
+        Route::delete('classes/{classId}',                [TeacherClassController::class, 'destroy']);
 
         // Topics & Lessons
         Route::get('classes/{classId}/topics',                                                    [TeacherTopicController::class, 'indexTopics']);
@@ -66,16 +86,28 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('classes/{classId}/topics/{topicId}/lessons/{lessonId}/materials/{materialId}', [TeacherTopicController::class, 'destroyMaterial']);
         Route::post('classes/{classId}/topics/{topicId}/lessons/{lessonId}/links',                [TeacherTopicController::class, 'storeLink']);
         Route::apiResource('content', TeacherContentController::class)->except(['show']);
+        Route::post('content/{material}/reprocess', [TeacherContentController::class, 'reprocess']);
+        Route::get('content/lessons', [TeacherContentController::class, 'lessons']);
         Route::get('ai-logs',                             [AIMonitoringController::class, 'index']);
         Route::patch('ai-logs/{log}/status',              [AIMonitoringController::class, 'updateStatus']);
         Route::get('anonymous-questions',                 [AIMonitoringController::class, 'anonymousQuestions']);
         Route::post('anonymous-questions/{question}/answer', [AIMonitoringController::class, 'answerQuestion']);
         Route::get('lessons/{lesson}/chat-logs',          [LessonChatLogController::class, 'index']);
+
+        // Class Progress Monitoring
+        Route::get('classes/{classId}/progress',          [ClassProgressController::class, 'index']);
+        Route::get('classes/{classId}/progress/topics/{topicId}', [ClassProgressController::class, 'topicDetail']);
+
+        // Contacts
+        Route::get('contacts',                            [TeacherContactController::class, 'index']);
     });
 
     // ── Student ──────────────────────────────────────────────────
     Route::prefix('student')->group(function () {
         Route::get('dashboard',                           [StudentDashboardController::class, 'index']);
+
+        // Contacts
+        Route::get('contacts/teachers',                   [StudentContactController::class, 'teachers']);
 
         // Classes & curriculum
         Route::get('classes',                             [StudentClassController::class, 'index']);
@@ -84,9 +116,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('classes/{classId}/topics/{topicId}',  [StudentClassController::class, 'topic']);
         Route::get('classes/{classId}/topics/{topicId}/lessons/{lessonId}', [StudentClassController::class, 'lesson']);
 
-        Route::get('practice/{topic}/questions',          [PracticeController::class, 'getQuestions']);
+        Route::get('practice/classes',                    [PracticeController::class, 'classes']);
+        Route::post('practice/generate',                  [PracticeController::class, 'generate']);
         Route::post('practice/submit',                    [PracticeController::class, 'submit']);
         Route::get('practice/history',                    [PracticeController::class, 'history']);
+        Route::get('practice/{topic}/questions',          [PracticeController::class, 'getQuestions']);
         Route::post('diagnostic/start',                   [DiagnosticController::class, 'start']);
         Route::post('diagnostic/submit',                  [DiagnosticController::class, 'submit']);
         Route::post('chatbot/ask',                        [ChatbotController::class, 'ask']);
@@ -95,6 +129,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('ask-teacher/answers',                 [ChatbotController::class, 'myAnonymousAnswers']);
         Route::post('lessons/{lesson}/chat',              [LessonChatController::class, 'ask']);
         Route::get('lessons/{lesson}/chat-logs',          [LessonChatController::class, 'logs']);
+
+        // Lesson Practice (AI-generated, NOT saved)
+        Route::post('lessons/{lesson}/practice/generate', [LessonPracticeController::class, 'generate']);
+        Route::post('lessons/{lesson}/practice/submit',   [LessonPracticeController::class, 'submit']);
+
+        // Lesson Quiz (AI-generated, saved, max 3 attempts)
+        Route::post('lessons/{lesson}/quiz/generate',     [QuizController::class, 'generate']);
+        Route::post('lessons/{lesson}/quiz/submit',       [QuizController::class, 'submit']);
+        Route::get('lessons/{lesson}/quiz/history',       [QuizController::class, 'history']);
+
+        // Skill Tree
+        Route::get('classes/{classId}/skill-tree',        [StudentSkillTreeController::class, 'index']);
+
+        // Progress
+        Route::get('progress',                            [StudentProgressController::class, 'index']);
     });
 
     // ── Parent ───────────────────────────────────────────────────
