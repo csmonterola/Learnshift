@@ -175,6 +175,7 @@ class LessonChatController extends Controller
 
         $logs = LessonChatLog::where('student_id', $student->id)
             ->where('lesson_id', $lesson->id)
+            ->with('reviewer:id,name')
             ->orderBy('created_at', 'desc')
             ->paginate(20);
 

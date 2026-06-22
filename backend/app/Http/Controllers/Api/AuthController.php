@@ -55,11 +55,12 @@ class AuthController extends Controller
         ]);
 
         $user = User::create([
-            'name'     => $request->name,
-            'email'    => $request->email,
-            'password' => Hash::make($request->password),
-            'role'     => $request->role,
-            'is_active' => true,
+            'name'            => $request->name,
+            'email'           => $request->email,
+            'password'        => Hash::make($request->password),
+            'role'            => $request->role,
+            'is_active'       => true,
+            'enrollment_code' => $request->role === 'student' ? \Illuminate\Support\Str::upper(\Illuminate\Support\Str::random(8)) : null,
         ]);
 
         // Create student profile if role is student

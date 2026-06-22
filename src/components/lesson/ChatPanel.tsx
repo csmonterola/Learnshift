@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Bot, User, Send } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Bot, User, Send, ShieldCheck, ShieldAlert, Eye, FileEdit, Loader2 } from 'lucide-react'
 import { studentApi } from '../../lib/api'
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -9,6 +11,24 @@ interface ChatMessage {
   content: string
   source?: string | null
   log_id?: number | null
+  status?: string | null
+  teacher_note?: string | null
+  teacher_corrected_response?: string | null
+  reviewer_name?: string | null
+}
+
+interface ChatLogEntry {
+  id: number
+  student_id: number
+  lesson_id: number
+  question: string
+  response: string
+  source: string
+  status: string
+  teacher_note: string | null
+  teacher_corrected_response: string | null
+  created_at: string
+  reviewer?: { id: number; name: string } | null
 }
 
 export interface ChatPanelProps {
@@ -18,7 +38,6 @@ export interface ChatPanelProps {
 }
 
 // ── SourceBadge ────────────────────────────────────────────────────
-// Requirements 9.1–9.6: color-coded badges per source value
 function SourceBadge({ source }: { source?: string | null }) {
   if (source === 'lesson_materials') {
     return (
@@ -44,7 +63,6 @@ function SourceBadge({ source }: { source?: string | null }) {
     )
   }
 
-  // null, undefined, or any unrecognized value → "Unknown Source" gray badge (Req 9.6)
   if (source !== undefined) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200 mt-1.5">
@@ -53,8 +71,57 @@ function SourceBadge({ source }: { source?: string | null }) {
     )
   }
 
-  // No source field at all (e.g. user messages) — render nothing
   return null
+}
+
+// ── TeacherReviewBadge ────────────────────────────────────────────
+function TeacherReviewBadge({ status, teacherNote, reviewerName, hasCorrection }: {
+  status?: string | null
+  teacherNote?: string | null
+  reviewerName?: string | null
+  hasCorrection?: boolean
+}) {
+  if (!status || status === 'ok') return null
+
+  let icon, bgColor, textColor, label
+
+  switch (status) {
+    case 'verified':
+      icon = <ShieldCheck size={12} />
+      bgColor = 'bg-emerald-50 border-emerald-200'
+      textColor = 'text-emerald-700'
+      label = 'Verified by Teacher'
+      break
+    case 'flagged':
+      icon = <ShieldAlert size={12} />
+      bgColor = 'bg-red-50 border-red-200'
+      textColor = 'text-red-700'
+      label = 'Flagged by Teacher'
+      break
+    case 'reviewed':
+      icon = <Eye size={12} />
+      bgColor = 'bg-blue-50 border-blue-200'
+      textColor = 'text-blue-700'
+      label = 'Reviewed by Teacher'
+      break
+    default:
+      return null
+  }
+
+  return (
+    <div className={`mt-3 ${bgColor} border rounded-lg p-3 space-y-1.5`}>
+      <div className={`flex items-center gap-1.5 text-xs font-semibold ${textColor}`}>
+        {icon} {label}
+        {hasCorrection && (
+          <span className="ml-1 px-1 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] font-bold">EDITED</span>
+        )}
+        {reviewerName && <span className="font-normal text-gray-500">· {reviewerName}</span>}
+      </div>
+      {teacherNote && (
+        <p className="text-xs text-gray-600 leading-relaxed">{teacherNote}</p>
+      )}
+    </div>
+  )
 }
 
 // ── ChatPanel ──────────────────────────────────────────────────────
@@ -68,13 +135,58 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Load past chat logs from the API
+  useEffect(() => {
+    if (historyLoaded) return
+    setHistoryLoaded(true)
+
+    studentApi.getLessonChatLogs(lessonId)
+      .then(res => {
+        const logs: ChatLogEntry[] = res.data?.data || res.data || []
+        if (logs.length === 0) return
+
+        const historyMessages: ChatMessage[] = []
+        // Reverse so oldest appears first
+        const reversed = [...logs].reverse()
+
+        for (const log of reversed) {
+          // Student question
+          historyMessages.push({
+            id: `hist-q-${log.id}`,
+            role: 'user',
+            content: log.question,
+          })
+          // AI response with teacher review data
+          const displayResponse = log.teacher_corrected_response || log.response
+          historyMessages.push({
+            id: `hist-a-${log.id}`,
+            role: 'assistant',
+            content: displayResponse,
+            source: log.source,
+            log_id: log.id,
+            status: log.status,
+            teacher_note: log.teacher_note,
+            teacher_corrected_response: log.teacher_corrected_response,
+            reviewer_name: log.reviewer?.name || null,
+          })
+        }
+
+        setMessages(prev => {
+          // Keep the welcome message, add history after it
+          const welcome = prev[0]
+          return [welcome, ...historyMessages]
+        })
+      })
+      .catch(err => console.error('Error loading chat history:', err))
+  }, [lessonId, historyLoaded])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Requirement 9.4 & 9.5: header indicator derived synchronously from props
   const sourceIndicator =
     selectedMaterialIds.size > 0
       ? `Using ${selectedMaterialIds.size} source${selectedMaterialIds.size === 1 ? '' : 's'}`
@@ -90,7 +202,6 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
     setInput('')
     setLoading(true)
     try {
-      // Requirement 9.4 / 4.1: include material_ids when non-empty, omit when empty
       const materialIds =
         selectedMaterialIds.size > 0 ? [...selectedMaterialIds] : undefined
       const res = await studentApi.askLessonChat(lessonId, question, materialIds)
@@ -121,7 +232,7 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Chat header — source context indicator (Requirements 9.4, 9.5) */}
+      {/* Chat header */}
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between bg-white shrink-0">
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-emerald-600" />
@@ -135,33 +246,46 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map(m => (
-          <div
-            key={m.id}
-            className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            {m.role === 'assistant' && (
-              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
-                <Bot className="w-4 h-4 text-emerald-600" />
+          <div key={m.id}>
+            <div
+              className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              {m.role === 'assistant' && (
+                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
+                  <Bot className="w-4 h-4 text-emerald-600" />
+                </div>
+              )}
+              <div className="flex flex-col items-start max-w-[80%]">
+                <div
+                  className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                    m.role === 'user'
+                      ? 'bg-emerald-500 text-white rounded-br-sm prose prose-sm prose-invert-thread max-w-none'
+                      : 'bg-gray-100 text-gray-800 rounded-bl-sm prose prose-sm max-w-none'
+                  }`}
+                >
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                </div>
+                {/* Source badge for assistant messages */}
+                {m.role === 'assistant' && m.source !== undefined && (
+                  <SourceBadge source={m.source} />
+                )}
               </div>
-            )}
-            <div className="flex flex-col items-start max-w-[80%]">
-              <div
-                className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                  m.role === 'user'
-                    ? 'bg-emerald-500 text-white rounded-br-sm'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-sm'
-                }`}
-              >
-                {m.content}
-              </div>
-              {/* Source badge only for assistant messages that have a source (Req 9.1–9.6) */}
-              {m.role === 'assistant' && m.source !== undefined && (
-                <SourceBadge source={m.source} />
+              {m.role === 'user' && (
+                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center shrink-0 mt-0.5">
+                  <User className="w-4 h-4 text-gray-600" />
+                </div>
               )}
             </div>
-            {m.role === 'user' && (
-              <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center shrink-0 mt-0.5">
-                <User className="w-4 h-4 text-gray-600" />
+
+            {/* Teacher review badge for history messages */}
+            {m.role === 'assistant' && m.status && m.status !== 'ok' && (
+              <div className="ml-11 max-w-[80%]">
+                <TeacherReviewBadge
+                  status={m.status}
+                  teacherNote={m.teacher_note}
+                  reviewerName={m.reviewer_name}
+                  hasCorrection={!!m.teacher_corrected_response}
+                />
               </div>
             )}
           </div>

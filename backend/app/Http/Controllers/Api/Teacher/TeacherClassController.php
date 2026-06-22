@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Teacher;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\SchoolClass;
 use Illuminate\Http\Request;
 
@@ -48,6 +49,12 @@ class TeacherClassController extends Controller
             'subject'     => $request->subject,
             'teacher_id'  => $teacher->id,
             'is_active'   => true,
+        ]);
+
+        ActivityLog::create([
+            'user_id'     => $teacher->id,
+            'action'      => 'class_created',
+            'description' => "Teacher {$teacher->name} created class {$class->name}",
         ]);
 
         return response()->json($class, 201);

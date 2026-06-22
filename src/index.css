@@ -88,4 +88,41 @@
   .status-pill.beginning {
     @apply bg-red-50 text-red-700 border border-red-100;
   }
+
+  /* ── Markdown table styles for chat and monitoring ── */
+  .prose.prose-sm table {
+    @apply w-full text-xs border-collapse my-2;
+  }
+  .prose.prose-sm thead {
+    @apply bg-gray-100;
+  }
+  .prose.prose-sm th {
+    @apply px-3 py-2 text-left font-bold text-gray-700 border border-gray-200;
+  }
+  .prose.prose-sm td {
+    @apply px-3 py-2 border border-gray-200 text-gray-600;
+  }
+  .prose.prose-sm tbody tr:nth-child(even) {
+    @apply bg-gray-50;
+  }
+  .prose.prose-sm tbody tr:hover {
+    @apply bg-gray-100;
+  }
+
+  /* White text overrides for user chat bubbles */
+  .prose-invert-thread.prose-sm table {
+    @apply w-full text-xs border-collapse my-2;
+  }
+  .prose-invert-thread.prose-sm thead {
+    @apply bg-white/20;
+  }
+  .prose-invert-thread.prose-sm th {
+    @apply px-3 py-2 text-left font-bold text-white border border-white/30;
+  }
+  .prose-invert-thread.prose-sm td {
+    @apply px-3 py-2 border border-white/30 text-white/90;
+  }
+  .prose-invert-thread.prose-sm tbody tr:nth-child(even) {
+    @apply bg-white/10;
+  }
 }

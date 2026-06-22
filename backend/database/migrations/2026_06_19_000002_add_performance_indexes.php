@@ -2,27 +2,22 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        // Messages - optimize chat queries
-        Schema::table('messages', function (Blueprint $table) {
-            $table->index(['sender_id', 'receiver_id', 'created_at'], 'idx_messages_sender_receiver');
-            $table->index(['receiver_id', 'is_read', 'created_at'], 'idx_messages_unread');
-        });
+        // Messages - optimize chat queries (use IF NOT EXISTS for idempotency)
+        DB::statement('CREATE INDEX IF NOT EXISTS "idx_messages_sender_receiver" ON "messages" ("sender_id", "receiver_id", "created_at")');
+        DB::statement('CREATE INDEX IF NOT EXISTS "idx_messages_unread" ON "messages" ("receiver_id", "is_read", "created_at")');
 
         // Quiz results - optimize student quiz lookups
-        Schema::table('quiz_results', function (Blueprint $table) {
-            $table->index(['student_id', 'lesson_id', 'submitted_at'], 'idx_quiz_student_lesson');
-        });
+        DB::statement('CREATE INDEX IF NOT EXISTS "idx_quiz_student_lesson" ON "quiz_results" ("student_id", "lesson_id", "submitted_at")');
 
         // Lesson progress - optimize progress queries
-        Schema::table('student_lesson_progress', function (Blueprint $table) {
-            $table->index(['student_id', 'lesson_id', 'status'], 'idx_lesson_progress_student');
-        });
+        DB::statement('CREATE INDEX IF NOT EXISTS "idx_lesson_progress_student" ON "student_lesson_progress" ("student_id", "lesson_id", "status")');
 
         // Practice attempts - optimize practice queries
         Schema::table('practice_attempts', function (Blueprint $table) {
@@ -30,9 +25,7 @@ return new class extends Migration
         });
 
         // Learning materials - optimize content queries
-        Schema::table('learning_materials', function (Blueprint $table) {
-            $table->index(['lesson_id', 'ingestion_status'], 'idx_materials_lesson_status');
-        });
+        DB::statement('CREATE INDEX IF NOT EXISTS "idx_materials_lesson_status" ON "learning_materials" ("lesson_id", "ingestion_status")');
     }
 
     public function down(): void

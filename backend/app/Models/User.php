@@ -13,6 +13,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'name', 'email', 'password', 'role', 'avatar', 'enrollment_code', 'is_active',
+        'timezone', 'language', 'email_notifications', 'theme',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -49,7 +50,7 @@ class User extends Authenticatable
     public function children()
     {
         return $this->belongsToMany(User::class, 'parent_child', 'parent_id', 'student_id')
-                    ->withPivot('linked_at');
+                    ->withPivot('linked_at', 'link_status', 'confirmed_at');
     }
 
     public function parents()

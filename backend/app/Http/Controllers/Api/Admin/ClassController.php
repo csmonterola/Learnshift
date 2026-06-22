@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\SchoolClass;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class ClassController extends Controller
@@ -56,6 +58,19 @@ class ClassController extends Controller
         ]);
 
         $class->students()->syncWithoutDetaching($request->student_ids);
+
+        // Log enrollment for each student
+        foreach ($request->student_ids as $studentId) {
+            $student = User::find($studentId);
+            if ($student) {
+                ActivityLog::create([
+                    'user_id'     => $request->user()->id,
+                    'action'      => 'student_enrolled',
+                    'description' => "Student {$student->name} enrolled in class {$class->name}",
+                ]);
+            }
+        }
+
         return response()->json(['message' => 'Students enrolled.']);
     }
 

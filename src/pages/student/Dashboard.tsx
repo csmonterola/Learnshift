@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuth } from '../../components/auth/AuthContext'
 import { studentApi } from '../../lib/api'
+import { ParentLinkRequests } from '../../components/student/ParentLinkRequests'
 import {
   BookOpen, FlaskConical, Inbox, Clock, AlertCircle, Send,
   ChevronRight, Trophy, Dumbbell, MessageCircle,
@@ -62,6 +63,9 @@ export function StudentDashboard() {
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-8">
+      {/* Parent Link Requests */}
+      <ParentLinkRequests />
+
       {/* Hero Section */}
       <motion.section variants={itemVariants}
         className="relative bg-gradient-to-r from-emerald-800 to-emerald-600 rounded-[32px] p-8 lg:p-10 overflow-hidden shadow-sm">

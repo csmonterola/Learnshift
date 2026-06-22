@@ -15,6 +15,15 @@ class LessonChatLog extends Model
         'source',
         'retrieved_chunk_count',
         'confidence_score',
+        'status',
+        'reviewed_by',
+        'teacher_note',
+        'teacher_corrected_response',
+        'reviewed_at',
+    ];
+
+    protected $casts = [
+        'reviewed_at' => 'datetime',
     ];
 
     public function student(): BelongsTo
@@ -25,5 +34,10 @@ class LessonChatLog extends Model
     public function lesson(): BelongsTo
     {
         return $this->belongsTo(Lesson::class);
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
     }
 }

@@ -20,7 +20,6 @@ const navItems = [
   { label: 'Practice',    icon: PlayCircle,     path: '/student/practice' },
   { label: 'Messages',    icon: MessageCircle,  path: '/student/messages' },
   { label: 'My Progress', icon: LineChart,      path: '/student/progress' },
-  { label: 'Diagnostic',  icon: Activity,       path: '/student/diagnostic' },
   { label: 'Settings',    icon: Settings,       path: '/student/settings' },
 ]
 

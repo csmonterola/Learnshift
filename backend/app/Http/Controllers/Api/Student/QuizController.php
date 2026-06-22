@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api\Student;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Lesson;
 use App\Models\QuizResult;
 use App\Models\StudentLessonProgress;
+use App\Models\User;
 use App\Services\Quiz\QuestionGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -129,6 +131,13 @@ class QuizController extends Controller
         // Update lesson progress and mastery
         $this->updateLessonMastery($student->id, $lesson->id, $score);
 
+        // Log quiz completion
+        ActivityLog::create([
+            'user_id'     => $student->id,
+            'action'      => 'quiz_completed',
+            'description' => "Student {$student->name} completed quiz for '{$lesson->title}' — Score: {$score}%",
+        ]);
+
         // Get best score across all attempts
         $bestScore = QuizResult::where('student_id', $student->id)
             ->where('lesson_id', $lesson->id)
@@ -199,7 +208,7 @@ class QuizController extends Controller
 
         $mastery = $this->calculateMastery($bestScore);
 
-        StudentLessonProgress::updateOrCreate(
+        $progress = StudentLessonProgress::updateOrCreate(
             ['student_id' => $studentId, 'lesson_id' => $lessonId],
             [
                 'status'             => $mastery === 100 ? 'completed' : 'in_progress',
@@ -208,6 +217,19 @@ class QuizController extends Controller
                 'completed_at'       => $mastery === 100 ? now() : null,
             ]
         );
+
+        // Log topic mastery if just reached 100%
+        if ($mastery === 100 && $progress->wasRecentlyCreated) {
+            $lesson = Lesson::find($lessonId);
+            $student = User::find($studentId);
+            if ($lesson && $student) {
+                ActivityLog::create([
+                    'user_id'     => $studentId,
+                    'action'      => 'topic_mastered',
+                    'description' => "Student {$student->name} mastered topic '{$lesson->title}'",
+                ]);
+            }
+        }
     }
 
     /**

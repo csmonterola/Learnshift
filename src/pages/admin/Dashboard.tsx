@@ -1,5 +1,6 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../components/auth/AuthContext'
+import { adminApi } from '../../lib/api'
 import {
   Users,
   UserCheck,
@@ -10,51 +11,116 @@ import {
   RefreshCw,
   ChevronRight,
   TrendingUp,
+  Loader2,
 } from 'lucide-react'
 
-const stats = [
-  {
-    title: 'TOTAL ACTIVE STUDENTS',
-    value: '450',
-    change: '+12 this month',
-    icon: Users,
-    borderColor: 'border-t-emerald-500',
-    iconBg: 'bg-emerald-50',
-    iconColor: 'text-emerald-600',
-    changeColor: 'text-emerald-600',
-  },
-  {
-    title: 'TOTAL TEACHERS',
-    value: '15',
-    change: '+2 this semester',
-    icon: UserCheck,
-    borderColor: 'border-t-accent-500',
-    iconBg: 'bg-accent-50',
-    iconColor: 'text-accent-600',
-    changeColor: 'text-emerald-600',
-  },
-  {
-    title: 'TOTAL CLASSES',
-    value: '12',
-    change: 'Across 4 grade levels',
-    icon: BookOpen,
-    borderColor: 'border-t-amber-400',
-    iconBg: 'bg-amber-50',
-    iconColor: 'text-amber-600',
-    changeColor: 'text-slate-500',
-  },
-]
+interface Activity {
+  id: number
+  user_name: string
+  action: string
+  description: string
+  created_at: string
+}
 
-const activities = [
-  { id: 1, title: 'Teacher Maria Santos',  subtitle: 'uploaded a new learning module',    detail: 'Grade 8 – Science: Cell Biology',          timestamp: 'Today, 9:14 AM',      icon: Upload,    iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600' },
-  { id: 2, title: 'System',               subtitle: 'generated 50 new student accounts',  detail: 'Batch: Grade 7 Enrollment 2025–2026',      timestamp: 'Today, 8:45 AM',      icon: UserPlus,  iconBg: 'bg-accent-50',  iconColor: 'text-accent-600' },
-  { id: 3, title: 'Admin',                subtitle: 'created a new class section',         detail: 'Grade 10 – Section B (Mathematics)',       timestamp: 'Yesterday, 4:02 PM',  icon: FilePlus,  iconBg: 'bg-amber-50',   iconColor: 'text-amber-600' },
-  { id: 4, title: 'System',               subtitle: 'completed scheduled data sync',       detail: 'All student records successfully synced',  timestamp: 'Yesterday, 2:30 PM',  icon: RefreshCw, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600' },
-  { id: 5, title: 'Teacher James Rivera', subtitle: 'uploaded a new learning module',      detail: 'Grade 9 – English: Narrative Writing',     timestamp: 'Yesterday, 11:20 AM', icon: Upload,    iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600' },
-]
+interface DashboardData {
+  total_students: number
+  total_teachers: number
+  total_classes: number
+  recent_activities: Activity[]
+}
+
+const actionIcons: Record<string, typeof Upload> = {
+  account_created: UserPlus,
+  upload: Upload,
+  login: RefreshCw,
+  signup: UserPlus,
+  default: FilePlus,
+}
+
+const actionColors: Record<string, string> = {
+  account_created: 'bg-accent-50 text-accent-600',
+  upload: 'bg-emerald-50 text-emerald-600',
+  login: 'bg-emerald-50 text-emerald-600',
+  signup: 'bg-accent-50 text-accent-600',
+  default: 'bg-amber-50 text-amber-600',
+}
 
 export function AdminDashboard() {
   const { user } = useAuth()
+  const [data, setData] = useState<DashboardData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    loadDashboard()
+  }, [])
+
+  const loadDashboard = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await adminApi.dashboard()
+      setData(res.data)
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Failed to load dashboard.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-500 mb-4">{error}</p>
+        <button onClick={loadDashboard} className="text-emerald-600 font-medium hover:text-emerald-700">
+          Try Again
+        </button>
+      </div>
+    )
+  }
+
+  if (!data) return null
+
+  const stats = [
+    {
+      title: 'TOTAL ACTIVE STUDENTS',
+      value: data.total_students.toString(),
+      change: `${data.total_students} enrolled`,
+      icon: Users,
+      borderColor: 'border-t-emerald-500',
+      iconBg: 'bg-emerald-50',
+      iconColor: 'text-emerald-600',
+      changeColor: 'text-emerald-600',
+    },
+    {
+      title: 'TOTAL TEACHERS',
+      value: data.total_teachers.toString(),
+      change: `${data.total_teachers} active teachers`,
+      icon: UserCheck,
+      borderColor: 'border-t-accent-500',
+      iconBg: 'bg-accent-50',
+      iconColor: 'text-accent-600',
+      changeColor: 'text-emerald-600',
+    },
+    {
+      title: 'TOTAL CLASSES',
+      value: data.total_classes.toString(),
+      change: `Across all grade levels`,
+      icon: BookOpen,
+      borderColor: 'border-t-amber-400',
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+      changeColor: 'text-slate-500',
+    },
+  ]
 
   return (
     <div className="space-y-8">
@@ -101,7 +167,10 @@ export function AdminDashboard() {
               <p className="text-sm text-gray-500">Latest events across your school portal</p>
             </div>
           </div>
-          <button className="text-sm font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+          <button
+            onClick={() => window.location.href = '/admin/activity-logs'}
+            className="text-sm font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+          >
             View All <ChevronRight className="w-4 h-4" />
           </button>
         </div>
@@ -116,28 +185,36 @@ export function AdminDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {activities.map((a) => {
-                const Icon = a.icon
+              {data.recent_activities.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="py-8 px-6 text-center text-sm text-gray-400">
+                    No recent activity.
+                  </td>
+                </tr>
+              )}
+              {data.recent_activities.map((a) => {
+                const Icon = actionIcons[a.action] ?? actionIcons.default
+                const colorClass = actionColors[a.action] ?? actionColors.default
                 return (
                   <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="py-4 px-6">
                       <div className="flex items-start gap-4">
-                        <div className={`w-8 h-8 rounded-lg ${a.iconBg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                          <Icon className={`w-4 h-4 ${a.iconColor}`} />
+                        <div className={`w-8 h-8 rounded-lg ${colorClass} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                          <Icon className="w-4 h-4" />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-gray-900">{a.title}</p>
-                          <p className="text-sm text-gray-500">{a.subtitle}</p>
+                          <p className="text-sm font-bold text-gray-900">{a.user_name}</p>
+                          <p className="text-sm text-gray-500">{a.description}</p>
                         </div>
                       </div>
                     </td>
                     <td className="py-4 px-6">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">
-                        {a.detail}
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600 capitalize">
+                        {a.action.replace(/_/g, ' ')}
                       </span>
                     </td>
                     <td className="py-4 px-6">
-                      <span className="text-sm text-gray-500">{a.timestamp}</span>
+                      <span className="text-sm text-gray-500">{a.created_at}</span>
                     </td>
                   </tr>
                 )

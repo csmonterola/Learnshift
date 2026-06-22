@@ -97,6 +97,10 @@ export const studentApi = {
   getQuizHistory: (lessonId: number) =>
     api.get(`/student/lessons/${lessonId}/quiz/history`),
 
+  // Lesson Chat Logs (for history + teacher review display)
+  getLessonChatLogs: (lessonId: number) =>
+    api.get(`/student/lessons/${lessonId}/chat-logs`),
+
   // Skill Tree
   getSkillTree: (classId: number) =>
     api.get(`/student/classes/${classId}/skill-tree`),
@@ -113,6 +117,16 @@ export const studentApi = {
   sendMessage: (receiverId: number, content: string) =>
     api.post('/messages', { receiver_id: receiverId, content }),
   getUnreadCount: () => api.get('/messages/unread-count'),
+
+  // Settings
+  getSettings: () => api.get('/settings'),
+  updateProfile: (data: { name: string; email: string; avatar?: string; grade_level?: string; section?: string }) =>
+    api.put('/settings/profile', data),
+  updatePassword: (data: { current_password: string; password: string; password_confirmation: string }) =>
+    api.put('/settings/password', data),
+  updatePreferences: (data: { timezone?: string; language?: string; email_notifications?: boolean; theme?: string }) =>
+    api.put('/settings/preferences', data),
+  deleteAccount: () => api.delete('/settings/account'),
 }
 
 // ── Teacher ───────────────────────────────────────────────────────
@@ -166,9 +180,11 @@ export const teacherApi = {
   deleteContent: (id: number) => api.delete(`/teacher/content/${id}`),
   reprocessContent: (id: number) => api.post(`/teacher/content/${id}/reprocess`),
   getContentLessons: (classId?: number) => api.get('/teacher/content/lessons', { params: { class_id: classId } }),
-  aiLogs: (status?: string) => api.get('/teacher/ai-logs', { params: { status } }),
-  updateLogStatus: (id: number, status: string, note?: string) =>
-    api.patch(`/teacher/ai-logs/${id}/status`, { status, teacher_note: note }),
+  aiLogs: (params?: { status?: string; search?: string }) =>
+    api.get('/teacher/ai-logs', { params }),
+  aiLogStats: () => api.get('/teacher/ai-logs/stats'),
+  updateLogStatus: (id: number, data: { status: string; teacher_note?: string; teacher_corrected_response?: string }) =>
+    api.patch(`/teacher/ai-logs/${id}/status`, data),
   anonymousQuestions: () => api.get('/teacher/anonymous-questions'),
   answerQuestion: (id: number, answer: string) =>
     api.post(`/teacher/anonymous-questions/${id}/answer`, { answer }),
@@ -188,12 +204,23 @@ export const teacherApi = {
   sendMessage: (receiverId: number, content: string) =>
     api.post('/messages', { receiver_id: receiverId, content }),
   getUnreadCount: () => api.get('/messages/unread-count'),
+
+  // Settings
+  getSettings: () => api.get('/settings'),
+  updateProfile: (data: { name: string; email: string; avatar?: string }) =>
+    api.put('/settings/profile', data),
+  updatePassword: (data: { current_password: string; password: string; password_confirmation: string }) =>
+    api.put('/settings/password', data),
+  updatePreferences: (data: { timezone?: string; language?: string; email_notifications?: boolean; theme?: string }) =>
+    api.put('/settings/preferences', data),
+  deleteAccount: () => api.delete('/settings/account'),
 }
 
 // ── Parent ────────────────────────────────────────────────────────
 export const parentApi = {
   dashboard: () => api.get('/parent/dashboard'),
-  linkChild: (code: string) => api.post('/parent/link-child', { enrollment_code: code }),
+  searchStudents: (query: string) => api.get('/parent/students/search', { params: { query } }),
+  linkChild: (studentId: number) => api.post('/parent/link-child', { student_id: studentId }),
   childProgress: (childId: number) => api.get(`/parent/children/${childId}/progress`),
   guidedSessions: (childId: number) => api.get(`/parent/children/${childId}/guided-sessions`),
   updateSessionProgress: (sessionId: number, studentId: number, percent: number) =>
@@ -201,8 +228,17 @@ export const parentApi = {
   courseMaterials: (childId: number) => api.get(`/parent/children/${childId}/course-materials`),
 }
 
+// ── Student Parent Link ───────────────────────────────────────────
+export const studentParentLinkApi = {
+  pendingRequests: () => api.get('/student/parent-requests'),
+  approveLink: (parentId: number) => api.post(`/student/parent-requests/${parentId}/approve`),
+  rejectLink: (parentId: number) => api.post(`/student/parent-requests/${parentId}/reject`),
+}
+
 // ── Admin ─────────────────────────────────────────────────────────
 export const adminApi = {
+  dashboard: () => api.get('/admin/dashboard'),
+  activityLogs: (params?: object) => api.get('/admin/activity-logs', { params }),
   users: (params?: object) => api.get('/admin/users', { params }),
   createUser: (data: object) => api.post('/admin/users', data),
   updateUser: (id: number, data: object) => api.put(`/admin/users/${id}`, data),

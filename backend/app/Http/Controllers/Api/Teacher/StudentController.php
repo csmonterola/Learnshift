@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Teacher;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\SchoolClass;
 use App\Models\User;
 use App\Models\StudentLessonProgress;
@@ -153,6 +154,15 @@ class StudentController extends Controller
             'student_id' => $request->student_id,
             'enrolled_at' => now(),
         ]);
+
+        $student = User::find($request->student_id);
+        if ($student) {
+            ActivityLog::create([
+                'user_id'     => $teacher->id,
+                'action'      => 'student_enrolled',
+                'description' => "Student {$student->name} enrolled in class {$class->name}",
+            ]);
+        }
 
         return response()->json(['message' => 'Student enrolled successfully']);
     }

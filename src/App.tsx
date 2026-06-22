@@ -24,7 +24,7 @@ import { StudentMessages } from './pages/student/Messages'
 import { StudentSkillTree } from './pages/student/SkillTree'
 import { StudentPractice } from './pages/student/Practice'
 import { StudentProgress } from './pages/student/Progress'
-import { StudentDiagnostic } from './pages/student/Diagnostic'
+import { StudentSettings } from './pages/student/Settings'
 
 // Teacher Pages
 import { TeacherDashboard } from './pages/teacher/Dashboard'
@@ -35,6 +35,7 @@ import { TeacherMessages } from './pages/teacher/Messages'
 import { TeacherStudentProfiles } from './pages/teacher/StudentProfiles'
 import { TeacherContentManager } from './pages/teacher/ContentManager'
 import { TeacherAIMonitoring } from './pages/teacher/AIMonitoring'
+import { TeacherSettings } from './pages/teacher/Settings'
 
 // Admin Pages
 import { AdminDashboard } from './pages/admin/Dashboard'
@@ -42,6 +43,7 @@ import { AdminAccountGeneration } from './pages/admin/AccountGeneration'
 import { AdminUserDirectory } from './pages/admin/UserDirectory'
 import { AdminClassManagement } from './pages/admin/ClassManagement'
 import { AdminSettings } from './pages/admin/Settings'
+import { ActivityLogPage } from './pages/admin/ActivityLog'
 
 // Parent Pages
 import { ParentDashboard } from './pages/parent/Dashboard'
@@ -76,8 +78,7 @@ export function App() {
               <Route path="/student/skill-tree" element={<StudentSkillTree />} />
               <Route path="/student/practice" element={<StudentPractice />} />
               <Route path="/student/progress" element={<StudentProgress />} />
-              <Route path="/student/diagnostic" element={<StudentDiagnostic />} />
-              <Route path="/student/settings" element={<Placeholder label="Settings" />} />
+              <Route path="/student/settings" element={<StudentSettings />} />
             </Route>
           </Route>
 
@@ -92,7 +93,7 @@ export function App() {
               <Route path="/teacher/students" element={<TeacherStudentProfiles />} />
               <Route path="/teacher/content" element={<TeacherContentManager />} />
               <Route path="/teacher/ai-logs" element={<TeacherAIMonitoring />} />
-              <Route path="/teacher/settings" element={<Placeholder label="Settings" />} />
+              <Route path="/teacher/settings" element={<TeacherSettings />} />
             </Route>
           </Route>
 
@@ -100,6 +101,7 @@ export function App() {
           <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
             <Route element={<AdminLayout />}>
               <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/admin/activity-logs" element={<ActivityLogPage />} />
               <Route path="/admin/account-generation" element={<AdminAccountGeneration />} />
               <Route path="/admin/directory" element={<AdminUserDirectory />} />
               <Route path="/admin/classes" element={<AdminClassManagement />} />

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CurriculumController;
+use App\Http\Controllers\Api\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\ClassController as AdminClassController;
 use App\Http\Controllers\Api\Teacher\DashboardController as TeacherDashboardController;
@@ -22,7 +23,9 @@ use App\Http\Controllers\Api\Student\LessonPracticeController;
 use App\Http\Controllers\Api\Student\ProgressController as StudentProgressController;
 use App\Http\Controllers\Api\Student\SkillTreeController as StudentSkillTreeController;
 use App\Http\Controllers\Api\Student\ContactController as StudentContactController;
+use App\Http\Controllers\Api\Student\ParentLinkController;
 use App\Http\Controllers\Api\Teacher\ContactController as TeacherContactController;
+use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\Teacher\ClassProgressController;
 use App\Http\Controllers\Api\ParentPortal\DashboardController as ParentDashboardController;
@@ -38,6 +41,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me',      [AuthController::class, 'me']);
 
+    // ── Settings (shared) ─────────────────────────────────────────
+    Route::get('settings',              [SettingsController::class, 'show']);
+    Route::put('settings/profile',      [SettingsController::class, 'updateProfile']);
+    Route::put('settings/password',     [SettingsController::class, 'updatePassword']);
+    Route::put('settings/preferences',  [SettingsController::class, 'updatePreferences']);
+    Route::delete('settings/account',   [SettingsController::class, 'destroy']);
+
     // ── Messages (shared) ────────────────────────────────────────
     Route::get('messages/conversations',              [MessageController::class, 'conversations']);
     Route::get('messages/{userId}',                   [MessageController::class, 'getMessages']);
@@ -51,6 +61,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Admin ────────────────────────────────────────────────────
     Route::prefix('admin')->group(function () {
+        Route::get('dashboard',       [AdminDashboardController::class, 'index']);
+        Route::get('activity-logs',   [AdminDashboardController::class, 'activityLogs']);
         Route::apiResource('users',   AdminUserController::class);
         Route::post('users/bulk',     [AdminUserController::class, 'bulkCreate']);
         Route::apiResource('classes', AdminClassController::class);
@@ -89,6 +101,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('content/{material}/reprocess', [TeacherContentController::class, 'reprocess']);
         Route::get('content/lessons', [TeacherContentController::class, 'lessons']);
         Route::get('ai-logs',                             [AIMonitoringController::class, 'index']);
+        Route::get('ai-logs/stats',                       [AIMonitoringController::class, 'stats']);
         Route::patch('ai-logs/{log}/status',              [AIMonitoringController::class, 'updateStatus']);
         Route::get('anonymous-questions',                 [AIMonitoringController::class, 'anonymousQuestions']);
         Route::post('anonymous-questions/{question}/answer', [AIMonitoringController::class, 'answerQuestion']);
@@ -105,6 +118,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Student ──────────────────────────────────────────────────
     Route::prefix('student')->group(function () {
         Route::get('dashboard',                           [StudentDashboardController::class, 'index']);
+
+        // Parent link requests
+        Route::get('parent-requests',                     [ParentLinkController::class, 'pendingRequests']);
+        Route::post('parent-requests/{parent}/approve',   [ParentLinkController::class, 'approveLink']);
+        Route::post('parent-requests/{parent}/reject',    [ParentLinkController::class, 'rejectLink']);
 
         // Contacts
         Route::get('contacts/teachers',                   [StudentContactController::class, 'teachers']);
@@ -149,6 +167,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Parent ───────────────────────────────────────────────────
     Route::prefix('parent')->group(function () {
         Route::get('dashboard',                               [ParentDashboardController::class, 'index']);
+        Route::get('students/search',                         [ParentDashboardController::class, 'searchStudents']);
         Route::post('link-child',                             [ParentDashboardController::class, 'linkChild']);
         Route::get('children/{child}/progress',               [ParentDashboardController::class, 'childProgress']);
         Route::get('children/{child}/guided-sessions',        [ParentDashboardController::class, 'guidedSessions']);

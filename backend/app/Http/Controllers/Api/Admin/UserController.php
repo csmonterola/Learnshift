@@ -45,7 +45,7 @@ class UserController extends Controller
             'email'            => $request->email,
             'password'         => Hash::make($request->password),
             'role'             => $request->role,
-            'enrollment_code'  => $request->role === 'parent' ? Str::upper(Str::random(8)) : null,
+            'enrollment_code'  => in_array($request->role, ['student', 'parent']) ? Str::upper(Str::random(8)) : null,
         ]);
 
         if ($user->role === 'student') {
@@ -106,7 +106,7 @@ class UserController extends Controller
                 'email'           => $data['email'],
                 'password'        => Hash::make($password),
                 'role'            => $data['role'],
-                'enrollment_code' => $data['role'] === 'parent' ? Str::upper(Str::random(8)) : null,
+                'enrollment_code' => in_array($data['role'], ['student', 'parent']) ? Str::upper(Str::random(8)) : null,
             ]);
 
             if ($user->role === 'student') {
