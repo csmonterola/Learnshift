@@ -49,6 +49,7 @@ export function AdminUserDirectory() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   const [formData, setFormData] = useState({
     name: '',
@@ -93,22 +94,25 @@ export function AdminUserDirectory() {
     setFormData({ name: '', email: '', password: '', role: 'student' })
     setEditingUser(null)
     setShowCreateModal(true)
+    setError('')
   }
 
-  const openEditModal = (user: User) => {
+  const openEditModal = (u: User) => {
     setFormData({
-      name: user.name,
-      email: user.email,
+      name: u.name,
+      email: u.email,
       password: '',
-      role: user.role,
+      role: u.role,
     })
-    setEditingUser(user)
+    setEditingUser(u)
     setShowCreateModal(true)
+    setError('')
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
+    setError('')
     try {
       if (editingUser) {
         const updateData: any = {
@@ -118,12 +122,22 @@ export function AdminUserDirectory() {
         }
         await adminApi.updateUser(editingUser.id, updateData)
       } else {
-        await adminApi.createUser(formData)
+        if (!formData.password || formData.password.length < 8) {
+          setError('Password must be at least 8 characters.')
+          setSaving(false)
+          return
+        }
+        await adminApi.createUser({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          role: formData.role,
+        })
       }
       setShowCreateModal(false)
       loadUsers()
     } catch (err: any) {
-      alert(err?.response?.data?.message ?? 'Operation failed.')
+      setError(err?.response?.data?.message ?? err?.response?.data?.error ?? 'Operation failed.')
     } finally {
       setSaving(false)
     }
@@ -154,7 +168,18 @@ export function AdminUserDirectory() {
   }
 
   const handleExport = () => {
-    alert('Export functionality would generate a CSV file with all users.')
+    const csvRows = [
+      ['Name', 'Email', 'Role', 'Status'],
+      ...users.map(u => [u.name, u.email, u.role, u.is_active ? 'Active' : 'Inactive']),
+    ]
+    const csvContent = csvRows.map(row => row.join(',')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'user_directory.csv'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const getRoleBadgeColor = (role: string) => {
@@ -414,7 +439,7 @@ export function AdminUserDirectory() {
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-gray-900">
-                {editingUser ? 'Edit User' : 'Create New User'}
+                {editingUser ? 'Edit User' : 'Create New Account'}
               </h2>
               <button
                 onClick={() => setShowCreateModal(false)}
@@ -478,6 +503,12 @@ export function AdminUserDirectory() {
                 </select>
               </div>
 
+              {error && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-sm text-rose-600">
+                  {error}
+                </div>
+              )}
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
@@ -491,7 +522,7 @@ export function AdminUserDirectory() {
                   disabled={saving}
                   className="flex-1 px-4 py-2.5 bg-emerald-500 text-white rounded-xl text-sm font-medium hover:bg-emerald-600 transition-colors disabled:opacity-50"
                 >
-                  {saving ? 'Saving...' : editingUser ? 'Update User' : 'Create User'}
+                  {saving ? 'Saving...' : editingUser ? 'Update User' : 'Create Account'}
                 </button>
               </div>
             </form>

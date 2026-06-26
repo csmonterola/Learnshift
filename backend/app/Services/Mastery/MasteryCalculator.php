@@ -10,6 +10,29 @@ use Illuminate\Support\Facades\DB;
 
 class MasteryCalculator
 {
+    public const THRESHOLD_PASS    = 70;
+    public const MASTERY_NONE      = 0;
+    public const MASTERY_ATTEMPTED = 50;
+    public const MASTERY_COMPLETE  = 100;
+
+    /**
+     * Calculate mastery percentage from a best quiz score.
+     *
+     * | Condition                      | Mastery |
+     * |--------------------------------|---------|
+     * | Quiz not attempted (null)      | 0%      |
+     * | Quiz attempted but score < 70% | 50%     |
+     * | Quiz score >= 70%              | 100%    |
+     */
+    public function calculateLessonMastery(?int $bestScore): int
+    {
+        if ($bestScore === null) {
+            return self::MASTERY_NONE;
+        }
+        $threshold = (int) config('quiz.pass_threshold', self::THRESHOLD_PASS);
+        return $bestScore >= $threshold ? self::MASTERY_COMPLETE : self::MASTERY_ATTEMPTED;
+    }
+
     /**
      * Calculate mastery percentage for a single lesson.
      *
@@ -112,9 +135,10 @@ class MasteryCalculator
         // Get all enrolled classes
         $classes = DB::table('class_student')
             ->join('classes', 'classes.id', '=', 'class_student.class_id')
+            ->leftJoin('subjects', 'subjects.id', '=', 'classes.subject_id')
             ->where('class_student.student_id', $studentId)
             ->where('classes.is_active', true)
-            ->select('classes.id', 'classes.name', 'classes.subject')
+            ->select('classes.id', 'classes.name', 'subjects.name as subject')
             ->get();
 
         $result = [];

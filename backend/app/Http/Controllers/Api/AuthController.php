@@ -4,11 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
-use App\Models\StudentProfile;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -30,6 +29,8 @@ class AuthController extends Controller
             ]);
         }
 
+        // Revoke old tokens and issue a new one
+        $user->tokens()->delete();
         $token = $user->createToken('auth_token')->plainTextToken;
 
         ActivityLog::create([
@@ -39,63 +40,87 @@ class AuthController extends Controller
             'ip_address' => $request->ip(),
         ]);
 
+        // Return the token in an HttpOnly cookie and the user in the JSON body
         return response()->json([
             'user'  => $user->load('studentProfile'),
-            'token' => $token,
-        ]);
+        ])->cookie(
+            'auth_token',        // name
+            $token,              // value
+            60 * 24 * 7,         // minutes (7 days)
+            '/',                 // path
+            null,                // domain
+            config('app.env') === 'production', // secure
+            true                 // httpOnly
+        );
     }
 
     public function signup(Request $request)
     {
-        $request->validate([
-            'name'     => 'required|string|max:255',
-            'email'    => 'required|email|unique:users,email',
-            'password' => 'required|string|min:6|confirmed',
-            'role'     => 'required|in:student,teacher,parent,admin',
-        ]);
-
-        $user = User::create([
-            'name'            => $request->name,
-            'email'           => $request->email,
-            'password'        => Hash::make($request->password),
-            'role'            => $request->role,
-            'is_active'       => true,
-            'enrollment_code' => $request->role === 'student' ? \Illuminate\Support\Str::upper(\Illuminate\Support\Str::random(8)) : null,
-        ]);
-
-        // Create student profile if role is student
-        if ($request->role === 'student') {
-            StudentProfile::create([
-                'student_id' => $user->id,
-                'grade_level' => $request->grade_level,
-                'section' => $request->section,
-            ]);
-        }
-
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        ActivityLog::create([
-            'user_id'    => $user->id,
-            'action'     => 'signup',
-            'description'=> "{$user->name} signed up as {$user->role}",
-            'ip_address' => $request->ip(),
-        ]);
-
-        return response()->json([
-            'user'  => $user->load('studentProfile'),
-            'token' => $token,
-        ], 201);
+        abort(403, 'Public registration is disabled. Accounts can only be created by an administrator.');
     }
 
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
-        return response()->json(['message' => 'Logged out successfully.']);
+
+        // Clear the auth cookie
+        return response()->json(['message' => 'Logged out successfully.'])
+            ->cookie('auth_token', '', -1, '/');
     }
 
     public function me(Request $request)
     {
         $user = $request->user()->load('studentProfile');
         return response()->json($user);
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if ($user) {
+            ActivityLog::create([
+                'user_id'     => $user->id,
+                'action'      => 'password_reset_requested',
+                'description' => "Password reset requested for {$user->email}",
+                'ip_address'  => $request->ip(),
+            ]);
+        }
+
+        return response()->json(['message' => 'If an account with that email exists, a reset link has been sent.']);
+    }
+
+    /**
+     * POST /api/auth/reset-password
+     *
+     * Accepts: token, email, password, password_confirmation
+     * Returns 200 on success, 422 on invalid/expired token.
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token'                 => 'required|string',
+            'email'                 => 'required|email',
+            'password'              => 'required|string|min:8|confirmed',
+        ]);
+
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function (User $user, string $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                ])->save();
+            }
+        );
+
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json(['message' => __($status)]);
+        }
+
+        return response()->json(['message' => __($status)], 422);
     }
 }

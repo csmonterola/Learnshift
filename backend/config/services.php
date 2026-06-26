@@ -40,4 +40,15 @@ return [
         'model'   => env('MISTRAL_MODEL', 'mistral-small-latest'),
     ],
 
+    'rag' => [
+        'chunk_max_tokens' => env('RAG_CHUNK_MAX_TOKENS', 500),
+        'chunk_overlap' => env('RAG_CHUNK_OVERLAP', 50),
+        'retrieval_top_k' => env('RAG_RETRIEVAL_TOP_K', 5),
+        'similarity_threshold' => env('RAG_SIMILARITY_THRESHOLD', 0.5),
+    ],
+
+    'quiz' => [
+        'max_attempts' => env('QUIZ_MAX_ATTEMPTS', 3),
+        'pass_threshold' => env('QUIZ_PASS_THRESHOLD', 70),
+    ],
 ];

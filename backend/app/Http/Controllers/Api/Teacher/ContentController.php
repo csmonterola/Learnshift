@@ -8,7 +8,9 @@ use App\Models\LearningMaterial;
 use App\Services\Rag\EmbeddingService;
 use App\Services\Rag\TextChunker;
 use App\Services\Rag\TextExtractor;
+use App\Services\Storage\MaterialUploadService;
 use App\Services\Storage\StorageConfigurationValidator;
+use App\Services\Rag\MaterialIngestionService;
 use App\Exceptions\TextExtractionException;
 use App\Exceptions\EmbeddingException;
 use Illuminate\Http\Request;
@@ -24,6 +26,8 @@ class ContentController extends Controller
         private readonly TextExtractor                 $textExtractor,
         private readonly TextChunker                   $textChunker,
         private readonly EmbeddingService              $embeddingService,
+        private readonly MaterialUploadService         $materialUploadService,
+        private readonly MaterialIngestionService      $materialIngestionService,
         private readonly StorageConfigurationValidator $storageValidator,
     ) {}
     
@@ -99,81 +103,11 @@ class ContentController extends Controller
             return response()->json(['message' => 'Lesson not found or unauthorized access.'], 403);
         }
 
-        $file = $request->file('file');
-        $uploadContext = [
-            'lesson_id' => $request->lesson_id,
-            'filename' => $file->getClientOriginalName(),
-            'file_size' => $file->getSize(),
-            'file_type' => $file->getClientOriginalExtension(),
-            'user_id' => $request->user()->id
-        ];
-        
         try {
-            // Generate consistent file path with unique identifier
-            $fileName = Str::uuid() . '.' . $file->getClientOriginalExtension();
-            $filePath = "lessons/{$request->lesson_id}/materials/{$fileName}";
-            
-            Log::info('Starting file upload', array_merge($uploadContext, ['storage_path' => $filePath]));
-            
-            // Upload file with comprehensive error handling
-            $storagePath = Storage::disk('public')->putFileAs(
-                dirname($filePath), 
-                $file, 
-                basename($filePath)
-            );
-            
-            if (!$storagePath) {
-                throw new \RuntimeException('Storage operation returned false - upload may have failed due to insufficient storage space or permissions');
-            }
-            
-            // Critical: Verify upload success immediately after upload
-            if (!Storage::disk('public')->exists($storagePath)) {
-                // Attempt cleanup of any partial upload
-                try {
-                    Storage::disk('public')->delete($storagePath);
-                } catch (\Exception $cleanupException) {
-                    Log::warning('Failed to cleanup partial upload', [
-                        'storage_path' => $storagePath,
-                        'cleanup_error' => $cleanupException->getMessage()
-                    ]);
-                }
-                
-                throw new \RuntimeException('File upload verification failed - file not found after upload. This may indicate storage authentication issues.');
-            }
-            
-            // Generate URL and verify accessibility
-            $uploadResult = $this->verifyUploadAndGenerateUrl($storagePath, $uploadContext);
-            
-            if (!$uploadResult['success']) {
-                // Cleanup uploaded file if URL verification fails
-                try {
-                    Storage::disk('public')->delete($storagePath);
-                } catch (\Exception $cleanupException) {
-                    Log::error('Failed to cleanup file after URL verification failure', [
-                        'storage_path' => $storagePath,
-                        'cleanup_error' => $cleanupException->getMessage()
-                    ]);
-                }
-                
-                throw new \RuntimeException($uploadResult['error']);
-            }
-            
-            $fileUrl = $uploadResult['file_url'];
-            
-            Log::info('File uploaded and verified successfully', array_merge($uploadContext, [
-                'storage_path' => $storagePath,
-                'file_url' => $fileUrl,
-                'url_accessible' => $uploadResult['url_accessible']
-            ]));
-            
+            $storagePath = $this->materialUploadService->upload($request->file('file'), $request->lesson_id);
+            $fileUrl = $this->materialUploadService->url($storagePath);
         } catch (\Exception $e) {
-            Log::error('File upload failed', array_merge($uploadContext, [
-                'error' => $e->getMessage(),
-                'error_type' => get_class($e),
-                'trace' => config('app.debug') ? $e->getTraceAsString() : null
-            ]));
-            
-            return $this->handleUploadError($e, $uploadContext);
+            return response()->json(['message' => 'Failed to upload file.', 'error' => $e->getMessage()], 500);
         }
 
         // Create database record with verified upload
@@ -264,96 +198,16 @@ class ContentController extends Controller
         ]);
 
         try {
-            // 1. Download file from S3 to temporary local path for processing
-            $tempDir = sys_get_temp_dir();
-            $tempFileName = uniqid('material_') . '.' . strtolower($material->file_type);
-            $tempPath = $tempDir . '/' . $tempFileName;
+            $count = $this->materialIngestionService->ingest($material);
 
-            $fileContents = Storage::disk('public')->get($material->file_path);
-            file_put_contents($tempPath, $fileContents);
-
-            if (!file_exists($tempPath)) {
-                throw new \RuntimeException('File not found on disk: ' . $tempPath);
-            }
-
-            // Clean up temporary file after processing
-            register_shutdown_function(function () use ($tempPath) {
-                if (file_exists($tempPath)) {
-                    @unlink($tempPath);
-                }
-            });
-
-            // 2. Extract text
-            $text = $this->textExtractor->extract($tempPath, $material->file_type);
-
-            if (trim($text) === '') {
-                throw new \RuntimeException('No text could be extracted from the file.');
-            }
-
-            // 3. Delete old embeddings for this material if re-processing
-            DB::table('lesson_embeddings')
-                ->where('lesson_id', $material->lesson_id)
-                ->where('material_id', $material->id)
-                ->delete();
-
-            // 4. Chunk the text
-            $chunks = $this->textChunker->chunk($text);
-
-            if (empty($chunks)) {
-                throw new \RuntimeException('Text chunking produced no chunks.');
-            }
-
-            // 5. Generate embeddings in batch
-            $vectors = $this->embeddingService->embedBatch($chunks);
-
-            // 6. Store embeddings in the database
-            $now = now();
-            $insertData = [];
-            foreach ($chunks as $index => $chunkText) {
-                $vector = $vectors[$index] ?? [];
-                if (empty($vector)) continue;
-
-                $insertData[] = [
-                    'lesson_id'        => $material->lesson_id,
-                    'material_id'      => $material->id,
-                    'chunk_index'      => $index,
-                    'chunk_text'       => $chunkText,
-                    'embedding'        => '[' . implode(',', $vector) . ']',
-                    'created_at'       => $now,
-                ];
-            }
-
-            if (!empty($insertData)) {
-                // Insert in batches using raw SQL for the vector column
-                foreach (array_chunk($insertData, 25) as $batch) {
-                    $placeholders = [];
-                    $values = [];
-                    foreach ($batch as $row) {
-                        $placeholders[] = '(?, ?, ?, ?, ?::vector, ?)';
-                        $values[] = $row['lesson_id'];
-                        $values[] = $row['material_id'];
-                        $values[] = $row['chunk_index'];
-                        $values[] = $row['chunk_text'];
-                        $values[] = $row['embedding'];
-                        $values[] = $row['created_at'];
-                    }
-                    DB::statement(
-                        'INSERT INTO lesson_embeddings (lesson_id, material_id, chunk_index, chunk_text, embedding, created_at) VALUES ' .
-                        implode(', ', $placeholders),
-                        $values
-                    );
-                }
-            }
-
-            // 7. Mark as indexed
             $material->update([
-                'ingestion_status' => 'indexed',
-                'ai_sync'          => true,
-                'updated_at'       => now(),
+                'ai_sync'    => true,
+                'updated_at' => now(),
             ]);
 
             return response()->json([
                 'message' => 'Material successfully processed and indexed.',
+                'chunks'   => $count,
                 'chunks'  => count($insertData),
             ]);
 

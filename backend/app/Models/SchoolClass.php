@@ -13,7 +13,7 @@ class SchoolClass extends Model
 
     protected $fillable = [
         'name', 'grade_level', 'section', 'school_year',
-        'teacher_id', 'subject', 'is_active',
+        'teacher_id', 'subject', 'subject_id', 'is_active',
     ];
 
     protected $casts = ['is_active' => 'boolean'];
@@ -21,6 +21,11 @@ class SchoolClass extends Model
     public function teacher()
     {
         return $this->belongsTo(User::class, 'teacher_id');
+    }
+
+    public function subject()
+    {
+        return $this->belongsTo(Subject::class);
     }
 
     public function students()

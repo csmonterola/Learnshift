@@ -7,6 +7,7 @@ use App\Models\Lesson;
 use App\Models\LearningMaterial;
 use App\Models\SchoolClass;
 use App\Models\Topic;
+use App\Services\Storage\MaterialUploadService;
 use App\Services\Storage\StorageConfigurationValidator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -16,6 +17,7 @@ use Illuminate\Support\Str;
 class TopicController extends Controller
 {
     public function __construct(
+        private readonly MaterialUploadService $materialUploadService,
         private readonly StorageConfigurationValidator $storageValidator,
     ) {}
 
@@ -169,57 +171,14 @@ class TopicController extends Controller
             ], 500);
         }
 
-        $file = $request->file('file');
-        
         try {
-            // Use consistent file path generation with unique identifier
-            $fileName = Str::uuid() . '.' . $file->getClientOriginalExtension();
-            $filePath = "lessons/{$lessonId}/materials/{$fileName}";
-            
-            // Upload file with comprehensive error handling
-            $storagePath = Storage::disk('public')->putFileAs(
-                dirname($filePath), 
-                $file, 
-                basename($filePath)
-            );
-            
-            if (!$storagePath) {
-                throw new \RuntimeException('Storage operation returned false');
-            }
-            
-            // Verify upload success
-            if (!Storage::disk('public')->exists($storagePath)) {
-                throw new \RuntimeException('File upload verification failed - file not found after upload');
-            }
-            
-            $fileUrl = Storage::disk('public')->url($storagePath);
-            
-            Log::info('Material uploaded successfully', [
-                'path' => $storagePath,
-                'url' => $fileUrl,
-                'filename' => $file->getClientOriginalName(),
-                'lesson_id' => $lessonId
-            ]);
-            
+            $storagePath = $this->materialUploadService->upload($request->file('file'), $lessonId);
+            $fileUrl = $this->materialUploadService->url($storagePath);
         } catch (\Exception $e) {
-            Log::error('Material upload failed', [
-                'lesson_id' => $lessonId,
-                'filename' => $file->getClientOriginalName(),
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return response()->json([
-                'message' => 'Failed to upload material',
-                'error' => $e->getMessage(),
-                'debug_info' => config('app.debug') ? [
-                    'trace' => $e->getTraceAsString(),
-                    'config_status' => $configValidation
-                ] : null
-            ], 500);
+            return response()->json(['message' => 'Failed to upload material.', 'error' => $e->getMessage()], 500);
         }
 
-        $fileType = strtoupper($file->getClientOriginalExtension());
+        $fileType = strtoupper($request->file('file')->getClientOriginalExtension());
         // Auto-enable AI sync for indexable document types so the RAG pipeline
         // ingests the material automatically via LearningMaterialObserver.
         $aiSync = in_array($fileType, ['PDF', 'DOCX', 'PPTX']);

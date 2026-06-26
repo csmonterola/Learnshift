@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Student;
 
 use App\Exceptions\EmbeddingException;
 use App\Http\Controllers\Controller;
+use App\Services\EnrollmentGuard;
 use App\Models\Lesson;
 use App\Models\LessonChatLog;
 use App\Services\Rag\EmbeddingService;
@@ -20,6 +21,7 @@ class LessonChatController extends Controller
         private readonly EmbeddingService $embeddingService,
         private readonly LessonRetriever  $retriever,
         private readonly RagPromptBuilder $promptBuilder,
+        private readonly EnrollmentGuard   $enrollmentGuard,
     ) {}
 
     public function ask(Request $request, Lesson $lesson): JsonResponse
@@ -32,17 +34,8 @@ class LessonChatController extends Controller
 
         $student = $request->user();
 
-        // Authorization: student must be enrolled in the class for this lesson
-        $isEnrolled = $lesson->topic->schoolClass->students()
-            ->where('users.id', $student->id)
-            ->exists();
-
-        if (!$isEnrolled) {
-            return response()->json(
-                ['error' => 'You are not enrolled in the class for this lesson.'],
-                403
-            );
-        }
+        $denied = $this->enrollmentGuard->denyIfNotEnrolled($student, $lesson);
+        if ($denied) return $denied;
 
         $question    = $validated['question'];
         $materialIds = $validated['material_ids'] ?? [];
@@ -96,8 +89,7 @@ class LessonChatController extends Controller
                 'Authorization' => "Bearer {$apiKey}",
                 'Content-Type'  => 'application/json',
             ])->timeout(30)
-              ->withoutVerifying()
-              ->post('https://api.mistral.ai/v1/chat/completions', [
+                            ->post('https://api.mistral.ai/v1/chat/completions', [
                 'model'       => $model,
                 'messages'    => $messages,
                 'max_tokens'  => 600,
@@ -165,13 +157,8 @@ class LessonChatController extends Controller
     {
         $student = $request->user();
 
-        $isEnrolled = $lesson->topic->schoolClass->students()
-            ->where('users.id', $student->id)
-            ->exists();
-
-        if (!$isEnrolled) {
-            return response()->json(['error' => 'You are not enrolled in the class for this lesson.'], 403);
-        }
+        $denied = $this->enrollmentGuard->denyIfNotEnrolled($student, $lesson);
+        if ($denied) return $denied;
 
         $logs = LessonChatLog::where('student_id', $student->id)
             ->where('lesson_id', $lesson->id)

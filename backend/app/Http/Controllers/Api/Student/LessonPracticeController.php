@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Student;
 
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
+use App\Services\EnrollmentGuard;
 use App\Services\Quiz\QuestionGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,6 +13,7 @@ class LessonPracticeController extends Controller
 {
     public function __construct(
         private readonly QuestionGenerator $questionGenerator,
+        private readonly EnrollmentGuard   $enrollmentGuard,
     ) {}
 
     /**
@@ -24,14 +26,8 @@ class LessonPracticeController extends Controller
     {
         $student = $request->user();
 
-        // Verify enrollment
-        $isEnrolled = $lesson->topic->schoolClass->students()
-            ->where('users.id', $student->id)
-            ->exists();
-
-        if (!$isEnrolled) {
-            return response()->json(['error' => 'You are not enrolled in this class.'], 403);
-        }
+        $denied = $this->enrollmentGuard->denyIfNotEnrolled($student, $lesson);
+        if ($denied) return $denied;
 
         try {
             $result = $this->questionGenerator->generate($lesson, 'practice', 5);

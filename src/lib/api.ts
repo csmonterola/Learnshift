@@ -9,21 +9,11 @@ const api = axios.create({
   },
 })
 
-// Attach the Sanctum token from localStorage on every request
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// On 401, clear token and redirect to login
+// On 401, redirect to login (token cookie is managed by the server)
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('auth_token')
       window.location.href = '/'
     }
     return Promise.reject(err)
@@ -37,12 +27,11 @@ export const authApi = {
   login: (email: string, password: string) =>
     api.post('/auth/login', { email, password }),
 
-  signup: (name: string, email: string, password: string, password_confirmation: string, role: string) =>
-    api.post('/auth/signup', { name, email, password, password_confirmation, role }),
-
   logout: () => api.post('/auth/logout'),
-
   me: () => api.get('/auth/me'),
+  forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (data: { token: string; email: string; password: string; password_confirmation: string }) =>
+    api.post('/auth/reset-password', data),
 }
 
 // ── Student ───────────────────────────────────────────────────────
@@ -253,6 +242,9 @@ export const adminApi = {
   updateUser: (id: number, data: object) => api.put(`/admin/users/${id}`, data),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
   bulkCreate: (users: object[]) => api.post('/admin/users/bulk', { users }),
+  bulkUpload: (formData: FormData) => api.post('/admin/users/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
   classes: (params?: object) => api.get('/admin/classes', { params }),
   createClass: (data: object) => api.post('/admin/classes', data),
   updateClass: (id: number, data: object) => api.put(`/admin/classes/${id}`, data),

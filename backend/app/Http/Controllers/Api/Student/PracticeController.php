@@ -66,7 +66,6 @@ class PracticeController extends Controller
         $student = $request->user();
         $lessonIds = $request->lesson_ids;
 
-        // Verify enrollment
         $enrolledLessonIds = DB::table('lessons')
             ->join('topics', 'lessons.topic_id', '=', 'topics.id')
             ->join('class_student', 'topics.class_id', '=', 'class_student.class_id')
