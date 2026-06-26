@@ -7,11 +7,18 @@ use App\Models\Lesson;
 use App\Models\LearningMaterial;
 use App\Models\SchoolClass;
 use App\Models\Topic;
+use App\Services\Storage\StorageConfigurationValidator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class TopicController extends Controller
 {
+    public function __construct(
+        private readonly StorageConfigurationValidator $storageValidator,
+    ) {}
+
     // ── Helpers ───────────────────────────────────────────────────
 
     private function authorizeClass(Request $request, int $classId): SchoolClass
@@ -146,9 +153,71 @@ class TopicController extends Controller
             'title' => 'nullable|string|max:255',
         ]);
 
-        $file    = $request->file('file');
-        $path    = $file->store("lessons/{$lessonId}/materials", 'public');
-        $fileUrl = Storage::disk('public')->url($path);
+        // Validate storage configuration before attempting upload
+        $configValidation = $this->storageValidator->validateCurrentConfig('public');
+        if (!$configValidation['valid']) {
+            Log::error('Storage configuration validation failed during material upload', [
+                'lesson_id' => $lessonId,
+                'errors' => $configValidation['errors'],
+                'credential_type' => $configValidation['credential_type']
+            ]);
+            
+            return response()->json([
+                'message' => 'Storage configuration error: Unable to upload files',
+                'errors' => $configValidation['errors'],
+                'credential_type' => $configValidation['credential_type']
+            ], 500);
+        }
+
+        $file = $request->file('file');
+        
+        try {
+            // Use consistent file path generation with unique identifier
+            $fileName = Str::uuid() . '.' . $file->getClientOriginalExtension();
+            $filePath = "lessons/{$lessonId}/materials/{$fileName}";
+            
+            // Upload file with comprehensive error handling
+            $storagePath = Storage::disk('public')->putFileAs(
+                dirname($filePath), 
+                $file, 
+                basename($filePath)
+            );
+            
+            if (!$storagePath) {
+                throw new \RuntimeException('Storage operation returned false');
+            }
+            
+            // Verify upload success
+            if (!Storage::disk('public')->exists($storagePath)) {
+                throw new \RuntimeException('File upload verification failed - file not found after upload');
+            }
+            
+            $fileUrl = Storage::disk('public')->url($storagePath);
+            
+            Log::info('Material uploaded successfully', [
+                'path' => $storagePath,
+                'url' => $fileUrl,
+                'filename' => $file->getClientOriginalName(),
+                'lesson_id' => $lessonId
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Material upload failed', [
+                'lesson_id' => $lessonId,
+                'filename' => $file->getClientOriginalName(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to upload material',
+                'error' => $e->getMessage(),
+                'debug_info' => config('app.debug') ? [
+                    'trace' => $e->getTraceAsString(),
+                    'config_status' => $configValidation
+                ] : null
+            ], 500);
+        }
 
         $fileType = strtoupper($file->getClientOriginalExtension());
         // Auto-enable AI sync for indexable document types so the RAG pipeline
@@ -161,7 +230,7 @@ class TopicController extends Controller
             'topic_id'   => $topicId,
             'lesson_id'  => $lessonId,
             'title'      => $request->title ?? $file->getClientOriginalName(),
-            'file_path'  => $path,
+            'file_path'  => $storagePath,
             'file_name'  => $file->getClientOriginalName(),
             'file_type'  => $fileType,
             'file_size'  => $file->getSize(),

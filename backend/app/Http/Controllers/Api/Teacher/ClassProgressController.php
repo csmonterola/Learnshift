@@ -93,23 +93,32 @@ class ClassProgressController extends Controller
             ];
         });
 
-        // ── Topic-level summary ──────────────────────────────────
+        // ── Topic-level summary (per-student averages) ──────────
         $topicSummary = $topics->map(function ($topic) use ($studentIds) {
             $topicLessons = DB::table('lessons')->where('topic_id', $topic->id)->pluck('id');
-            $progress = StudentLessonProgress::where('student_id', $studentIds)
+            $lessonCount = $topicLessons->count();
+            $progress = StudentLessonProgress::whereIn('student_id', $studentIds)
                 ->whereIn('lesson_id', $topicLessons)
                 ->get();
 
             $total = $studentIds->count();
-            $mastered = $progress->filter(fn($p) => $p->mastery_percentage === 100)->count();
-            $developing = $progress->filter(fn($p) => $p->mastery_percentage > 0 && $p->mastery_percentage < 70)->count();
-            $notStarted = $total - $progress->unique('student_id')->count();
-            $avgMastery = $total > 0 ? (int) round($progress->avg('mastery_percentage')) : 0;
+
+            // Calculate per-student average mastery (divide by total lessons, unattempted = 0%)
+            $studentMasteries = $studentIds->map(function ($sid) use ($progress, $lessonCount) {
+                $studentRecords = $progress->where('student_id', $sid);
+                if ($studentRecords->isEmpty()) return 0; // Not started = 0%
+                return (int) round($studentRecords->sum('mastery_percentage') / $lessonCount);
+            });
+
+            $avgMastery = $total > 0 ? (int) round($studentMasteries->avg()) : 0;
+            $mastered = $studentMasteries->filter(fn($m) => $m === 100)->count();
+            $developing = $studentMasteries->filter(fn($m) => $m > 0 && $m < 70)->count();
+            $notStarted = $studentMasteries->filter(fn($m) => $m === 0)->count();
 
             return [
                 'id'              => $topic->id,
                 'title'           => $topic->title,
-                'lesson_count'    => $topicLessons->count(),
+                'lesson_count'    => $lessonCount,
                 'avg_mastery'     => $avgMastery,
                 'mastered_count'  => $mastered,
                 'developing_count' => $developing,

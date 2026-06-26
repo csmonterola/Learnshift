@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\Teacher\ClassProgressController;
 use App\Http\Controllers\Api\ParentPortal\DashboardController as ParentDashboardController;
+use App\Http\Controllers\Api\ParentPortal\LessonChatController as ParentLessonChatController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public ────────────────────────────────────────────────────────
@@ -68,6 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('classes', AdminClassController::class);
         Route::post('classes/{class}/enroll',           [AdminClassController::class, 'enrollStudents']);
         Route::delete('classes/{class}/students/{studentId}', [AdminClassController::class, 'removeStudent']);
+        Route::get('classes/{class}/detail',            [AdminClassController::class, 'detail']);
     });
 
     // ── Teacher ──────────────────────────────────────────────────
@@ -173,5 +175,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('children/{child}/guided-sessions',        [ParentDashboardController::class, 'guidedSessions']);
         Route::post('sessions/{session}/progress',            [ParentDashboardController::class, 'updateSessionProgress']);
         Route::get('children/{child}/course-materials',       [ParentDashboardController::class, 'courseMaterials']);
+        Route::get('children/{child}/activity',               [ParentDashboardController::class, 'studentActivity']);
+        Route::get('children/{child}/classes',                [ParentDashboardController::class, 'childClasses']);
+        Route::get('children/{child}/classes/{classId}/topics', [ParentDashboardController::class, 'childClassTopics']);
+        Route::get('children/{child}/classes/{classId}/topics/{topicId}/lessons', [ParentDashboardController::class, 'childTopicLessons']);
+        Route::get('children/{child}/classes/{classId}/topics/{topicId}/lessons/{lessonId}', [ParentDashboardController::class, 'childLessonDetail']);
+        Route::post('children/{child}/classes/{classId}/topics/{topicId}/lessons/{lessonId}/chat', [ParentLessonChatController::class, 'ask']);
     });
 });

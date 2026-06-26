@@ -226,6 +226,15 @@ export const parentApi = {
   updateSessionProgress: (sessionId: number, studentId: number, percent: number) =>
     api.post(`/parent/sessions/${sessionId}/progress`, { student_id: studentId, progress_percent: percent }),
   courseMaterials: (childId: number) => api.get(`/parent/children/${childId}/course-materials`),
+  studentActivity: (childId: number) => api.get(`/parent/children/${childId}/activity`),
+  childClasses: (childId: number) => api.get(`/parent/children/${childId}/classes`),
+  childClassTopics: (childId: number, classId: number) => api.get(`/parent/children/${childId}/classes/${classId}/topics`),
+  childTopicLessons: (childId: number, classId: number, topicId: number) => 
+    api.get(`/parent/children/${childId}/classes/${classId}/topics/${topicId}/lessons`),
+  lessonDetail: (childId: number, classId: number, topicId: number, lessonId: number) =>
+    api.get(`/parent/children/${childId}/classes/${classId}/topics/${topicId}/lessons/${lessonId}`),
+  lessonChat: (childId: number, classId: number, topicId: number, lessonId: number, question: string) =>
+    api.post(`/parent/children/${childId}/classes/${classId}/topics/${topicId}/lessons/${lessonId}/chat`, { question }),
 }
 
 // ── Student Parent Link ───────────────────────────────────────────
@@ -250,6 +259,7 @@ export const adminApi = {
   deleteClass: (id: number) => api.delete(`/admin/classes/${id}`),
   enrollStudents: (classId: number, studentIds: number[]) =>
     api.post(`/admin/classes/${classId}/enroll`, { student_ids: studentIds }),
+  classDetail: (classId: number) => api.get(`/admin/classes/${classId}/detail`),
 }
 
 // ── Curriculum ────────────────────────────────────────────────────

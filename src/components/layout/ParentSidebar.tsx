@@ -5,7 +5,7 @@ import { parentApi } from '../../lib/api'
 import {
   LayoutDashboardIcon,
   BookOpenIcon,
-  PlayCircleIcon,
+  BarChart3Icon,
   SettingsIcon,
   LogOutIcon,
   MoreVerticalIcon,
@@ -14,7 +14,7 @@ import {
 const navItems = [
   { path: '/parent',                  label: 'Dashboard',       icon: LayoutDashboardIcon },
   { path: '/parent/course-materials', label: 'Course Materials', icon: BookOpenIcon },
-  { path: '/parent/guided-sessions',  label: 'Guided Sessions',  icon: PlayCircleIcon },
+  { path: '/parent/activity',         label: 'Student Activity',  icon: BarChart3Icon },
   { path: '/parent/settings',         label: 'Settings',         icon: SettingsIcon },
 ]
 

@@ -1,245 +1,496 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../components/auth/AuthContext'
+import { parentApi } from '../../lib/api'
 import {
-  SearchIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  CheckCircleIcon,
-  CircleIcon,
-  ClockIcon,
-  BookmarkIcon,
+  ChevronRight,
+  ChevronDown,
+  Loader2,
+  FileText,
+  Video,
+  Link as LinkIcon,
+  Download,
+  BookOpen,
+  FolderOpen,
+  FileIcon,
+  ExternalLink,
 } from 'lucide-react'
 
-const quarters = [
-  {
-    id: 1, name: 'Quarter 1 – Numbers', completed: '2/4 completed',
-    lessons: [
-      { name: 'Place Value',       duration: '12 min', completed: true },
-      { name: 'Comparing Numbers', duration: '10 min', completed: true },
-      { name: 'Rounding Numbers',  duration: '14 min', completed: false },
-      { name: 'Number Patterns',   duration: '',       completed: false, disabled: true },
-    ],
-  },
-  {
-    id: 2, name: 'Quarter 2 – Operations', completed: '2/5 completed',
-    lessons: [
-      { name: 'Addition & Subtraction',   duration: '15 min', completed: true },
-      { name: 'Multiplication',           duration: '18 min', completed: true },
-      { name: 'Division',                 duration: '20 min', completed: false, active: true },
-      { name: 'Division with Remainders', duration: '',       completed: false, disabled: true },
-      { name: 'Order of Operations',      duration: '',       completed: false, disabled: true },
-    ],
-  },
-  { id: 3, name: 'Quarter 3 – Fractions', completed: '0/3 completed', lessons: [] },
-  { id: 4, name: 'Quarter 4 – Geometry',  completed: '0/2 completed', lessons: [] },
-]
-
-const quarterColors: Record<number, string> = {
-  1: 'bg-blue-100 text-blue-600',
-  2: 'bg-amber-100 text-amber-600',
-  3: 'bg-purple-100 text-purple-600',
-  4: 'bg-pink-100 text-pink-600',
+interface SchoolClass {
+  id: number
+  name: string
+  grade_level: string
+  section: string
+  subject: string
+  teacher: {
+    id: number
+    name: string
+  }
 }
 
-export function ParentCourseMaterials() {
-  const [expandedQuarters, setExpandedQuarters] = useState<number[]>([1, 2])
+interface Topic {
+  id: number
+  title: string
+  description: string
+  order: number
+}
 
-  const toggleQuarter = (id: number) => {
-    setExpandedQuarters((prev) =>
-      prev.includes(id) ? prev.filter((q) => q !== id) : [...prev, id],
+interface Lesson {
+  id: number
+  title: string
+  content: string
+  order: number
+  mastery_percentage: number
+  status: string
+  materials: LearningMaterial[]
+}
+
+interface LearningMaterial {
+  id: number
+  title: string
+  description: string
+  material_type: string
+  file_path: string
+  url: string
+  subject: {
+    id: number
+    name: string
+  }
+  teacher: {
+    id: number
+    name: string
+  }
+  created_at: string
+}
+
+type NavigationStep = 'classes' | 'topics' | 'lessons' | 'materials'
+
+export function ParentCourseMaterials() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null)
+  
+  // Navigation state
+  const [currentStep, setCurrentStep] = useState<NavigationStep>('classes')
+  const [selectedClass, setSelectedClass] = useState<SchoolClass | null>(null)
+  const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null)
+  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null)
+  
+  // Data
+  const [classes, setClasses] = useState<SchoolClass[]>([])
+  const [topics, setTopics] = useState<Topic[]>([])
+  const [lessons, setLessons] = useState<Lesson[]>([])
+
+  useEffect(() => {
+    loadChildren()
+  }, [])
+
+  const loadChildren = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await parentApi.dashboard()
+      const children = res.data.children
+      if (children && children.length > 0) {
+        setSelectedChildId(children[0].id)
+        await loadClasses(children[0].id)
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Failed to load children.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadClasses = async (childId: number) => {
+    setLoading(true)
+    try {
+      const res = await parentApi.childClasses(childId)
+      setClasses(res.data)
+      setCurrentStep('classes')
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Failed to load classes.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadTopics = async (classId: number) => {
+    setLoading(true)
+    try {
+      const res = await parentApi.childClassTopics(selectedChildId!, classId)
+      setTopics(res.data)
+      setCurrentStep('topics')
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Failed to load topics.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadLessons = async (classId: number, topicId: number) => {
+    setLoading(true)
+    try {
+      const res = await parentApi.childTopicLessons(selectedChildId!, classId, topicId)
+      setLessons(res.data)
+      setCurrentStep('lessons')
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Failed to load lessons.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleChildChange = async (childId: number) => {
+    setSelectedChildId(childId)
+    setSelectedClass(null)
+    setSelectedTopic(null)
+    setSelectedLesson(null)
+    await loadClasses(childId)
+  }
+
+  const handleClassSelect = (cls: SchoolClass) => {
+    setSelectedClass(cls)
+    setSelectedTopic(null)
+    setSelectedLesson(null)
+    loadTopics(cls.id)
+  }
+
+  const handleTopicSelect = (topic: Topic) => {
+    setSelectedTopic(topic)
+    setSelectedLesson(null)
+    if (selectedClass) {
+      loadLessons(selectedClass.id, topic.id)
+    }
+  }
+
+  const handleLessonSelect = (lesson: Lesson) => {
+    if (selectedChildId && selectedClass) {
+      // Navigate to the notebook-style lesson view
+      navigate(`/parent/course-materials/${selectedChildId}/class/${selectedClass.id}/topic/${selectedTopic?.id}/lesson/${lesson.id}`)
+    }
+  }
+
+  const handleBack = () => {
+    if (currentStep === 'materials') {
+      setSelectedLesson(null)
+      setCurrentStep('lessons')
+    } else if (currentStep === 'lessons') {
+      setSelectedTopic(null)
+      setCurrentStep('topics')
+    } else if (currentStep === 'topics') {
+      setSelectedClass(null)
+      setCurrentStep('classes')
+    }
+  }
+
+  const getMaterialIcon = (type?: string) => {
+    const normalizedType = type?.toLowerCase() || 'document'
+    switch (normalizedType) {
+      case 'video':
+        return <Video className="w-5 h-5" />
+      case 'pdf':
+      case 'document':
+        return <FileText className="w-5 h-5" />
+      case 'link':
+        return <LinkIcon className="w-5 h-5" />
+      default:
+        return <FileIcon className="w-5 h-5" />
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      case 'in_progress':
+        return 'bg-amber-50 text-amber-700 border-amber-200'
+      default:
+        return 'bg-gray-50 text-gray-600 border-gray-200'
+    }
+  }
+
+  if (loading && !classes.length && !topics.length && !lessons.length) {
+    return (
+      <div className="max-w-7xl mx-auto p-8 flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto p-8 text-center">
+        <p className="text-red-500 mb-4">{error}</p>
+        <button
+          onClick={() => selectedChildId && loadClasses(selectedChildId)}
+          className="text-emerald-600 font-medium hover:text-emerald-700"
+        >
+          Try Again
+        </button>
+      </div>
     )
   }
 
   return (
     <div className="max-w-7xl mx-auto p-8">
+      {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-1">Course Materials</h1>
-        <p className="text-gray-500">Grade 4 · Mathematics · Marcel's curriculum</p>
+        <p className="text-gray-500">Browse learning materials for your child</p>
       </div>
 
-      <div className="grid grid-cols-12 gap-6">
-        {/* Left: Curriculum tree */}
-        <div className="col-span-5 bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-xs font-semibold text-gray-400 mb-1">GRADE 4 · MATH</div>
-              <h2 className="text-xl font-bold">Curriculum</h2>
-            </div>
-            <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
-              11 lessons
-            </span>
-          </div>
+      {/* Child Selector */}
+      {selectedChildId && (
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Select Student</label>
+          <select
+            value={selectedChildId}
+            onChange={(e) => handleChildChange(Number(e.target.value))}
+            className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 outline-none"
+          >
+            <option value={selectedChildId}>Student #{selectedChildId}</option>
+          </select>
+        </div>
+      )}
 
-          <div className="relative mb-6">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search topics..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
-
-          <div className="space-y-2 mb-6 max-h-[600px] overflow-y-auto">
-            {quarters.map((quarter) => (
-              <div key={quarter.id} className="border border-gray-200 rounded-lg overflow-hidden">
-                <button
-                  onClick={() => toggleQuarter(quarter.id)}
-                  className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors"
-                >
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${quarterColors[quarter.id]}`}>
-                    <span className="text-xs font-bold">Q{quarter.id}</span>
-                  </div>
-                  <div className="flex-1 text-left">
-                    <div className="font-semibold text-sm">{quarter.name}</div>
-                    <div className="text-xs text-gray-500">{quarter.completed}</div>
-                  </div>
-                  {expandedQuarters.includes(quarter.id)
-                    ? <ChevronUpIcon className="w-4 h-4 text-gray-400" />
-                    : <ChevronDownIcon className="w-4 h-4 text-gray-400" />}
-                </button>
-
-                {expandedQuarters.includes(quarter.id) && quarter.lessons.length > 0 && (
-                  <div className="border-t border-gray-200 bg-gray-50">
-                    {quarter.lessons.map((lesson, i) => (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-b-0 ${
-                          (lesson as any).disabled ? 'opacity-50' : 'hover:bg-white cursor-pointer'
-                        } ${(lesson as any).active ? 'bg-amber-50 border-l-4 border-l-amber-500' : ''}`}
-                      >
-                        {lesson.completed
-                          ? <CheckCircleIcon className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                          : <CircleIcon className="w-5 h-5 text-gray-300 flex-shrink-0" />}
-                        <div className="flex-1 min-w-0">
-                          <div className={`text-sm font-medium ${(lesson as any).active ? 'text-amber-900' : ''}`}>
-                            {lesson.name}
-                          </div>
-                        </div>
-                        {lesson.duration && (
-                          <div className="text-xs text-gray-500 flex items-center gap-1">
-                            <ClockIcon className="w-3 h-3" />
-                            {lesson.duration}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="pt-4 border-t border-gray-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-600">Overall progress</span>
-              <span className="text-sm font-bold">4 / 14</span>
-            </div>
-            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full" style={{ width: '28%' }} />
-            </div>
+      {/* Breadcrumb Navigation */}
+      {(selectedClass || selectedTopic || selectedLesson) && (
+        <div className="mb-6 flex items-center gap-2 text-sm">
+          <button
+            onClick={handleBack}
+            className="text-emerald-600 hover:text-emerald-700 font-medium"
+          >
+            Back
+          </button>
+          <div className="flex items-center gap-2 text-gray-400">
+            <ChevronRight className="w-4 h-4" />
+            {currentStep === 'topics' && selectedClass && (
+              <span className="text-gray-900 font-medium">{selectedClass.name}</span>
+            )}
+            {currentStep === 'lessons' && selectedClass && selectedTopic && (
+              <>
+                <span className="text-gray-900 font-medium">{selectedClass.name}</span>
+                <ChevronRight className="w-4 h-4" />
+                <span className="text-gray-900 font-medium">{selectedTopic.title}</span>
+              </>
+            )}
+            {currentStep === 'materials' && selectedClass && selectedTopic && selectedLesson && (
+              <>
+                <span className="text-gray-900 font-medium">{selectedClass.name}</span>
+                <ChevronRight className="w-4 h-4" />
+                <span className="text-gray-900 font-medium">{selectedTopic.title}</span>
+                <ChevronRight className="w-4 h-4" />
+                <span className="text-gray-900 font-medium">{selectedLesson.title}</span>
+              </>
+            )}
           </div>
         </div>
+      )}
 
-        {/* Right: Lesson detail */}
-        <div className="col-span-7 bg-white rounded-xl border border-gray-200 p-8">
-          <div className="mb-6">
-            <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-              <span>Grade 4</span><span>›</span>
-              <span>Quarter 2 – Operations</span><span>›</span>
-              <span className="font-medium text-gray-900">Division</span>
+      {!selectedChildId ? (
+        <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+          <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-gray-900 mb-2">No Student Selected</h2>
+          <p className="text-gray-500">Please link a student to view course materials.</p>
+        </div>
+      ) : currentStep === 'classes' ? (
+        /* Classes Grid */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {classes.length === 0 ? (
+            <div className="col-span-full bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+              <FolderOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h2 className="text-xl font-bold text-gray-900 mb-2">No Classes Found</h2>
+              <p className="text-gray-500">This student is not enrolled in any classes yet.</p>
             </div>
-
-            <div className="flex items-center gap-3 mb-6">
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
-                PARENT GUIDE
-              </span>
-              <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-3 py-1 rounded-full flex items-center gap-1">
-                ● In Progress – Marcel
-              </span>
-              <span className="text-xs text-gray-500 flex items-center gap-1">
-                <ClockIcon className="w-3 h-3" />20 min read
-              </span>
-              <button className="ml-auto text-gray-400 hover:text-gray-600">
-                <BookmarkIcon className="w-5 h-5" />
-              </button>
-            </div>
-
-            <h1 className="text-4xl font-bold mb-2">Division</h1>
-            <p className="text-gray-500">Module 3 of 5 · Mathematics · Grade 4</p>
-          </div>
-
-          {/* Info banner */}
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-8 flex gap-3">
-            <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold">i</span>
-            </div>
-            <div>
-              <div className="font-semibold text-emerald-900 mb-1">WHAT YOUR CHILD IS LEARNING</div>
-              <p className="text-sm text-emerald-800">
-                Marcel is currently working on <strong>Division — Module 3</strong> in class. This guide is
-                designed to help you reinforce those concepts at home with simple, hands-on activities.
-              </p>
-            </div>
-          </div>
-
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4">What is Division?</h2>
-            <p className="text-gray-700 mb-4">
-              <strong>Division is the opposite of multiplication.</strong> It splits numbers into equal
-              parts or groups. When we divide, we're answering the question:{' '}
-              <em>"If I share this equally, how much does each person get?"</em>
-            </p>
-            <p className="text-gray-700">
-              For example, <strong>12 ÷ 4 = 3</strong> means:{' '}
-              <em>"12 objects split equally into 4 groups gives 3 in each group."</em>{' '}
-              At Grade 4, the focus is on understanding this concept through physical grouping before
-              moving to written notation.
+          ) : (
+            classes.map((cls) => (
+              <div
+                key={cls.id}
+                onClick={() => handleClassSelect(cls)}
+                className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">{cls.name}</h3>
+                <p className="text-sm text-gray-600 mb-1">{cls.subject}</p>
+                <p className="text-xs text-gray-500">
+                  {cls.grade_level} - {cls.section}
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Teacher: {cls.teacher?.name || 'Unassigned'}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      ) : currentStep === 'topics' ? (
+        /* Topics List */
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-100">
+            <h2 className="text-xl font-bold text-gray-900">Topics</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              {selectedClass?.name} - {selectedClass?.subject}
             </p>
           </div>
-
-          {/* Vocabulary */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-8">
-            <div className="font-semibold text-blue-900 mb-3">KEY VOCABULARY</div>
-            <div className="space-y-2">
-              {[
-                { term: 'Dividend', def: 'The number being divided (e.g., 12)' },
-                { term: 'Divisor',  def: 'The number you divide by (e.g., 4)' },
-                { term: 'Quotient', def: 'The result / answer (e.g., 3)' },
-              ].map((v) => (
-                <div key={v.term} className="flex gap-2">
-                  <span className="font-semibold text-blue-700">{v.term}</span>
-                  <span className="text-gray-600">— {v.def}</span>
+          {topics.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">
+              <p>No topics available for this class.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {topics.map((topic) => (
+                <div
+                  key={topic.id}
+                  onClick={() => handleTopicSelect(topic)}
+                  className="p-6 hover:bg-gray-50 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900 mb-1">{topic.title}</h3>
+                      {topic.description && (
+                        <p className="text-sm text-gray-600 line-clamp-2">{topic.description}</p>
+                      )}
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* Step guide */}
-          <div className="bg-gray-900 rounded-xl p-6 flex items-center gap-4 mb-8">
-            <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-              <div className="w-6 h-6 border-2 border-white rounded-full" />
-            </div>
-            <div className="flex-1">
-              <div className="font-semibold text-white mb-1">Step-by-step guide</div>
-              <div className="text-sm text-gray-300">Learn the methodology</div>
-            </div>
-            <span className="text-xs font-semibold text-emerald-400">3 STEPS</span>
-          </div>
-
-          <div className="flex gap-4">
-            <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold">1</span>
-            </div>
-            <div>
-              <h3 className="font-bold mb-2">Start with a sharing story</h3>
-              <p className="text-sm text-gray-600">
-                Begin with a relatable scenario:{' '}
-                <em>"You have 12 candies to share equally among 4 friends."</em>{' '}
-                Avoid abstract notation initially — make it tangible and visual.
-              </p>
-            </div>
-          </div>
+          )}
         </div>
-      </div>
+      ) : currentStep === 'lessons' ? (
+        /* Lessons List */
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-100">
+            <h2 className="text-xl font-bold text-gray-900">Lessons</h2>
+            <p className="text-sm text-gray-500 mt-1">{selectedTopic?.title}</p>
+          </div>
+          {lessons.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">
+              <p>No lessons available for this topic.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {lessons.map((lesson) => (
+                <div
+                  key={lesson.id}
+                  onClick={() => handleLessonSelect(lesson)}
+                  className="p-6 hover:bg-gray-50 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="font-semibold text-gray-900">{lesson.title}</h3>
+                        <span className={`px-2 py-1 rounded-md text-xs font-medium border ${getStatusColor(lesson.status)}`}>
+                          {lesson.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      {lesson.mastery_percentage > 0 && (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden max-w-[200px]">
+                            <div
+                              className="h-full bg-emerald-500 rounded-full"
+                              style={{ width: `${lesson.mastery_percentage}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-gray-600">{lesson.mastery_percentage}% mastery</span>
+                        </div>
+                      )}
+                      {lesson.materials && lesson.materials.length > 0 && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          {lesson.materials.length} material{lesson.materials.length !== 1 ? 's' : ''} available
+                        </p>
+                      )}
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : currentStep === 'materials' && selectedLesson ? (
+        /* Materials View */
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">{selectedLesson.title}</h2>
+            {selectedLesson.content && (
+              <p className="text-gray-600 mb-4">{selectedLesson.content}</p>
+            )}
+            <div className="flex items-center gap-3">
+              <span className={`px-3 py-1 rounded-md text-xs font-medium border ${getStatusColor(selectedLesson.status)}`}>
+                {selectedLesson.status.replace('_', ' ')}
+              </span>
+              {selectedLesson.mastery_percentage > 0 && (
+                <span className="text-sm text-gray-600">
+                  Mastery: {selectedLesson.mastery_percentage}%
+                </span>
+              )}
+            </div>
+          </div>
+
+          {selectedLesson.materials && selectedLesson.materials.length > 0 ? (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Learning Materials</h3>
+              {selectedLesson.materials.map((material) => (
+                <div
+                  key={material.id}
+                  className="p-4 border border-gray-200 rounded-xl hover:border-emerald-300 hover:bg-emerald-50/30 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-4 flex-1">
+                      <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0 text-emerald-600">
+                        {getMaterialIcon(material.material_type)}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900 mb-1">{material.title}</h4>
+                        {material.description && (
+                          <p className="text-sm text-gray-600 mb-2">{material.description}</p>
+                        )}
+                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <span>{material.material_type}</span>
+                          <span>•</span>
+                          <span>By {material.teacher?.name || 'Unknown'}</span>
+                          <span>•</span>
+                          <span>Added {new Date(material.created_at).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {material.file_path && (
+                        <button className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                          <Download className="w-5 h-5" />
+                        </button>
+                      )}
+                      {material.url && (
+                        <a
+                          href={material.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                        >
+                          <ExternalLink className="w-5 h-5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-400">
+              <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No materials available for this lesson.</p>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   )
 }

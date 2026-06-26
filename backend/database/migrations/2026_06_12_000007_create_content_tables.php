@@ -12,14 +12,16 @@ return new class extends Migration
         Schema::create('learning_materials', function (Blueprint $table) {
             $table->id();
             $table->foreignId('teacher_id')->constrained('users')->cascadeOnDelete();
-            $table->foreignId('subject_id')->constrained('subjects')->cascadeOnDelete();
+            $table->foreignId('subject_id')->nullable()->constrained('subjects')->nullOnDelete();
             $table->foreignId('topic_id')->nullable()->constrained('topics')->nullOnDelete();
+            $table->foreignId('lesson_id')->nullable()->constrained('lessons')->cascadeOnDelete();
             $table->string('title');
             $table->string('file_path');
             $table->string('file_name');
             $table->string('file_type'); // PDF, DOCX, PPTX
             $table->unsignedBigInteger('file_size')->nullable();
             $table->boolean('ai_sync')->default(false); // synced to AI chatbot
+            $table->string('ingestion_status')->default('pending'); // pending, processing, indexed, failed
             $table->timestamps();
         });
 

@@ -9,8 +9,10 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Enable the pgvector extension (requires PostgreSQL with pgvector installed)
-        DB::statement('CREATE EXTENSION IF NOT EXISTS vector');
+        // Enable the pgvector extension only for PostgreSQL
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('CREATE EXTENSION IF NOT EXISTS vector');
+        }
 
         Schema::create('lesson_embeddings', function (Blueprint $table) {
             $table->id();
@@ -28,17 +30,22 @@ return new class extends Migration
             $table->index('material_id', 'idx_lesson_embeddings_material_id');
         });
 
-        // Add the vector column separately since Laravel Blueprint does not natively support pgvector types
-        DB::statement('ALTER TABLE lesson_embeddings ADD COLUMN embedding vector(1024) NOT NULL');
+        if (DB::getDriverName() === 'pgsql') {
+            // Add the vector column separately since Laravel Blueprint does not natively support pgvector types
+            DB::statement('ALTER TABLE lesson_embeddings ADD COLUMN embedding vector(1024) NOT NULL');
 
-        // IVFFlat index for approximate nearest-neighbour search using cosine distance
-        // (best created after bulk loading initial data, but included here for schema completeness)
-        DB::statement(
-            'CREATE INDEX idx_lesson_embeddings_ivfflat '
-            . 'ON lesson_embeddings '
-            . 'USING ivfflat (embedding vector_cosine_ops) '
-            . 'WITH (lists = 100)'
-        );
+            // IVFFlat index for approximate nearest-neighbour search using cosine distance
+            // (best created after bulk loading initial data, but included here for schema completeness)
+            DB::statement(
+                'CREATE INDEX idx_lesson_embeddings_ivfflat '
+                . 'ON lesson_embeddings '
+                . 'USING ivfflat (embedding vector_cosine_ops) '
+                . 'WITH (lists = 100)'
+            );
+        } else {
+            // Use JSON column for SQLite testing
+            DB::statement('ALTER TABLE lesson_embeddings ADD COLUMN embedding TEXT NOT NULL DEFAULT \'[]\'');
+        }
     }
 
     public function down(): void

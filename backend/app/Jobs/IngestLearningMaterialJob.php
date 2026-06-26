@@ -43,11 +43,74 @@ class IngestLearningMaterialJob implements ShouldQueue
         try {
             $material->update(['ingestion_status' => 'processing']);
 
-            // Resolve the absolute file path from the public storage disk
-            $filePath = Storage::disk('public')->path($material->file_path);
+            // Download file from S3 to a temporary local path for processing
+            $tempDir = sys_get_temp_dir();
+            $tempFileName = uniqid('material_') . '.' . strtolower($material->file_type);
+            $tempPath = $tempDir . '/' . $tempFileName;
+
+            // Attempt to download file from storage with specific error handling
+            try {
+                $fileContents = Storage::disk('public')->get($material->file_path);
+            } catch (\Throwable $storageException) {
+                // Classify storage errors for better diagnostics
+                $errorMessage = $storageException->getMessage();
+                $errorType = 'storage_error';
+                
+                if (str_contains($errorMessage, 'InvalidAccessKeyId') || 
+                    str_contains($errorMessage, 'SignatureDoesNotMatch') ||
+                    str_contains($errorMessage, 'authentication')) {
+                    $errorType = 'storage_authentication_error';
+                    Log::error('IngestLearningMaterialJob: Storage authentication failed', [
+                        'material_id' => $this->materialId,
+                        'error' => $errorMessage,
+                        'file_path' => $material->file_path,
+                        'note' => 'Check S3 credentials configuration'
+                    ]);
+                } elseif (str_contains($errorMessage, 'NoSuchBucket') || 
+                          str_contains($errorMessage, 'bucket')) {
+                    $errorType = 'storage_bucket_error';
+                    Log::error('IngestLearningMaterialJob: Storage bucket not found', [
+                        'material_id' => $this->materialId,
+                        'error' => $errorMessage,
+                        'file_path' => $material->file_path
+                    ]);
+                } elseif (str_contains($errorMessage, 'AccessDenied') || 
+                          str_contains($errorMessage, 'Forbidden')) {
+                    $errorType = 'storage_permission_error';
+                    Log::error('IngestLearningMaterialJob: Storage permission denied', [
+                        'material_id' => $this->materialId,
+                        'error' => $errorMessage,
+                        'file_path' => $material->file_path
+                    ]);
+                } else {
+                    Log::error('IngestLearningMaterialJob: Storage access failed', [
+                        'material_id' => $this->materialId,
+                        'error' => $errorMessage,
+                        'error_type' => $errorType,
+                        'file_path' => $material->file_path
+                    ]);
+                }
+
+                $material->update([
+                    'ingestion_status' => 'failed',
+                    'ai_sync' => false
+                ]);
+                
+                // Throw exception to be caught by outer catch block
+                throw new \RuntimeException("Storage access failed ({$errorType}): {$errorMessage}");
+            }
+            
+            file_put_contents($tempPath, $fileContents);
+
+            // Clean up temporary file after successful processing
+            register_shutdown_function(function () use ($tempPath) {
+                if (file_exists($tempPath)) {
+                    @unlink($tempPath);
+                }
+            });
 
             // Extract plain text from the file
-            $text = $extractor->extract($filePath, $material->file_type);
+            $text = $extractor->extract($tempPath, $material->file_type);
 
             // Guard: if extraction yields no usable text, mark as failed and bail out (Requirement 2.3)
             if (trim($text) === '') {
@@ -91,13 +154,25 @@ class IngestLearningMaterialJob implements ShouldQueue
 
             $material->update(['ingestion_status' => 'indexed']);
         } catch (\Throwable $e) {
-            Log::error('IngestLearningMaterialJob failed', [
-                'material_id' => $this->materialId,
-                'error'       => $e->getMessage(),
-                'trace'       => $e->getTraceAsString(),
-            ]);
+            $errorMessage = $e->getMessage();
+            
+            // Check if this is a storage-related error that we should classify
+            if (str_contains($errorMessage, 'Storage access failed')) {
+                // Already logged with specific details above
+            } else {
+                Log::error('IngestLearningMaterialJob failed', [
+                    'material_id' => $this->materialId,
+                    'error'       => $errorMessage,
+                    'error_type'  => get_class($e),
+                    'trace'       => config('app.debug') ? $e->getTraceAsString() : null,
+                ]);
+            }
 
-            $material->update(['ingestion_status' => 'failed']);
+            $material->update([
+                'ingestion_status' => 'failed',
+                'ai_sync' => false
+            ]);
+            
             // Do NOT rethrow — prevents queue retry; failure surfaced via ingestion_status
         }
     }

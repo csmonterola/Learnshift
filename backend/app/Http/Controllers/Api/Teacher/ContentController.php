@@ -8,19 +8,23 @@ use App\Models\LearningMaterial;
 use App\Services\Rag\EmbeddingService;
 use App\Services\Rag\TextChunker;
 use App\Services\Rag\TextExtractor;
+use App\Services\Storage\StorageConfigurationValidator;
 use App\Exceptions\TextExtractionException;
 use App\Exceptions\EmbeddingException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class ContentController extends Controller
 {
     public function __construct(
-        private readonly TextExtractor    $textExtractor,
-        private readonly TextChunker      $textChunker,
-        private readonly EmbeddingService $embeddingService,
+        private readonly TextExtractor                 $textExtractor,
+        private readonly TextChunker                   $textChunker,
+        private readonly EmbeddingService              $embeddingService,
+        private readonly StorageConfigurationValidator $storageValidator,
     ) {}
     
     public function index(Request $request)
@@ -38,7 +42,7 @@ class ContentController extends Controller
                     'file_type'        => $material->file_type,
                     'file_size'        => $material->file_size,
                     'file_path'        => $material->file_path,
-                    'file_url'         => $material->file_type !== 'LINK' ? Storage::disk('public')->url($material->file_path) : $material->file_path,
+                    'file_url'         => $material->file_url, // Use model's enhanced URL generation
                     'ai_sync'          => $material->ai_sync,
                     'ingestion_status' => $material->ingestion_status ?? 'pending',
                     'created_at'       => $material->created_at,
@@ -64,40 +68,163 @@ class ContentController extends Controller
             'file'       => 'required|file|mimes:pdf,docx,pptx,doc,ppt,txt|max:51200',
         ]);
 
-        // Verify ownership
-        $lesson = DB::table('lessons')
-            ->join('topics', 'lessons.topic_id', '=', 'topics.id')
-            ->join('classes', 'topics.class_id', '=', 'classes.id')
-            ->where('lessons.id', $request->lesson_id)
-            ->where('classes.teacher_id', $request->user()->id)
-            ->select('lessons.id')
-            ->first();
+        // Validate storage configuration before attempting upload
+        $configValidation = $this->storageValidator->validateCurrentConfig('public');
+        if (!$configValidation['valid']) {
+            Log::error('Storage configuration validation failed during upload', [
+                'errors' => $configValidation['errors'],
+                'credential_type' => $configValidation['credential_type'],
+                'lesson_id' => $request->lesson_id,
+                'user_id' => $request->user()->id
+            ]);
+            
+            return response()->json([
+                'message' => 'Storage system not properly configured',
+                'error' => 'Unable to upload files due to authentication configuration issues. Please contact support.',
+                'technical_details' => config('app.debug') ? [
+                    'errors' => $configValidation['errors'],
+                    'credential_type' => $configValidation['credential_type']
+                ] : null
+            ], 500);
+        }
 
+        // Verify lesson ownership
+        $lesson = $this->verifyLessonOwnership($request->lesson_id, $request->user()->id);
         if (!$lesson) {
-            return response()->json(['message' => 'Lesson not found or unauthorized.'], 403);
+            Log::warning('Unauthorized file upload attempt', [
+                'lesson_id' => $request->lesson_id,
+                'user_id' => $request->user()->id,
+                'user_name' => $request->user()->name
+            ]);
+            return response()->json(['message' => 'Lesson not found or unauthorized access.'], 403);
         }
 
         $file = $request->file('file');
-        $path = $file->store("lessons/{$request->lesson_id}/materials", 'public');
+        $uploadContext = [
+            'lesson_id' => $request->lesson_id,
+            'filename' => $file->getClientOriginalName(),
+            'file_size' => $file->getSize(),
+            'file_type' => $file->getClientOriginalExtension(),
+            'user_id' => $request->user()->id
+        ];
+        
+        try {
+            // Generate consistent file path with unique identifier
+            $fileName = Str::uuid() . '.' . $file->getClientOriginalExtension();
+            $filePath = "lessons/{$request->lesson_id}/materials/{$fileName}";
+            
+            Log::info('Starting file upload', array_merge($uploadContext, ['storage_path' => $filePath]));
+            
+            // Upload file with comprehensive error handling
+            $storagePath = Storage::disk('public')->putFileAs(
+                dirname($filePath), 
+                $file, 
+                basename($filePath)
+            );
+            
+            if (!$storagePath) {
+                throw new \RuntimeException('Storage operation returned false - upload may have failed due to insufficient storage space or permissions');
+            }
+            
+            // Critical: Verify upload success immediately after upload
+            if (!Storage::disk('public')->exists($storagePath)) {
+                // Attempt cleanup of any partial upload
+                try {
+                    Storage::disk('public')->delete($storagePath);
+                } catch (\Exception $cleanupException) {
+                    Log::warning('Failed to cleanup partial upload', [
+                        'storage_path' => $storagePath,
+                        'cleanup_error' => $cleanupException->getMessage()
+                    ]);
+                }
+                
+                throw new \RuntimeException('File upload verification failed - file not found after upload. This may indicate storage authentication issues.');
+            }
+            
+            // Generate URL and verify accessibility
+            $uploadResult = $this->verifyUploadAndGenerateUrl($storagePath, $uploadContext);
+            
+            if (!$uploadResult['success']) {
+                // Cleanup uploaded file if URL verification fails
+                try {
+                    Storage::disk('public')->delete($storagePath);
+                } catch (\Exception $cleanupException) {
+                    Log::error('Failed to cleanup file after URL verification failure', [
+                        'storage_path' => $storagePath,
+                        'cleanup_error' => $cleanupException->getMessage()
+                    ]);
+                }
+                
+                throw new \RuntimeException($uploadResult['error']);
+            }
+            
+            $fileUrl = $uploadResult['file_url'];
+            
+            Log::info('File uploaded and verified successfully', array_merge($uploadContext, [
+                'storage_path' => $storagePath,
+                'file_url' => $fileUrl,
+                'url_accessible' => $uploadResult['url_accessible']
+            ]));
+            
+        } catch (\Exception $e) {
+            Log::error('File upload failed', array_merge($uploadContext, [
+                'error' => $e->getMessage(),
+                'error_type' => get_class($e),
+                'trace' => config('app.debug') ? $e->getTraceAsString() : null
+            ]));
+            
+            return $this->handleUploadError($e, $uploadContext);
+        }
 
-        $material = LearningMaterial::create([
-            'teacher_id'       => $request->user()->id,
-            'lesson_id'        => $request->lesson_id,
-            'title'            => $request->title,
-            'file_path'        => $path,
-            'file_name'        => $file->getClientOriginalName(),
-            'file_type'        => strtoupper($file->getClientOriginalExtension()),
-            'file_size'        => $file->getSize(),
-            'ingestion_status' => 'pending',
-        ]);
+        // Create database record with verified upload
+        try {
+            $material = LearningMaterial::create([
+                'teacher_id'       => $request->user()->id,
+                'lesson_id'        => $request->lesson_id,
+                'title'            => $request->title,
+                'file_path'        => $storagePath,
+                'file_name'        => $file->getClientOriginalName(),
+                'file_type'        => strtoupper($file->getClientOriginalExtension()),
+                'file_size'        => $file->getSize(),
+                'ingestion_status' => 'pending',
+            ]);
 
-        ActivityLog::create([
-            'user_id'     => $request->user()->id,
-            'action'      => 'material_uploaded',
-            'description' => "Teacher {$request->user()->name} uploaded material '{$material->title}'",
-        ]);
+            ActivityLog::create([
+                'user_id'     => $request->user()->id,
+                'action'      => 'material_uploaded',
+                'description' => "Teacher {$request->user()->name} uploaded material '{$material->title}' to lesson {$request->lesson_id}",
+            ]);
 
-        return response()->json($material->load(['lesson.topic.schoolClass', 'subject']), 201);
+            return response()->json([
+                'success' => true,
+                'material' => $material->load(['lesson.topic.schoolClass', 'subject']),
+                'file_url' => $fileUrl,
+                'upload_verified' => $uploadResult['url_accessible']
+            ], 201);
+            
+        } catch (\Exception $dbException) {
+            Log::error('Database record creation failed after successful upload', array_merge($uploadContext, [
+                'storage_path' => $storagePath,
+                'db_error' => $dbException->getMessage()
+            ]));
+            
+            // Attempt to cleanup uploaded file since DB operation failed
+            try {
+                Storage::disk('public')->delete($storagePath);
+                Log::info('Cleaned up uploaded file after database failure', ['storage_path' => $storagePath]);
+            } catch (\Exception $cleanupException) {
+                Log::error('Failed to cleanup uploaded file after database failure', [
+                    'storage_path' => $storagePath,
+                    'cleanup_error' => $cleanupException->getMessage()
+                ]);
+            }
+            
+            return response()->json([
+                'message' => 'File uploaded successfully but failed to save record',
+                'error' => 'Database error occurred while saving file information. Please try again.',
+                'debug_info' => config('app.debug') ? $dbException->getMessage() : null
+            ], 500);
+        }
     }
 
     public function update(Request $request, LearningMaterial $material)
@@ -137,15 +264,27 @@ class ContentController extends Controller
         ]);
 
         try {
-            // 1. Get full file path on disk
-            $fullPath = Storage::disk('public')->path($material->file_path);
+            // 1. Download file from S3 to temporary local path for processing
+            $tempDir = sys_get_temp_dir();
+            $tempFileName = uniqid('material_') . '.' . strtolower($material->file_type);
+            $tempPath = $tempDir . '/' . $tempFileName;
 
-            if (!file_exists($fullPath)) {
-                throw new \RuntimeException('File not found on disk: ' . $fullPath);
+            $fileContents = Storage::disk('public')->get($material->file_path);
+            file_put_contents($tempPath, $fileContents);
+
+            if (!file_exists($tempPath)) {
+                throw new \RuntimeException('File not found on disk: ' . $tempPath);
             }
 
+            // Clean up temporary file after processing
+            register_shutdown_function(function () use ($tempPath) {
+                if (file_exists($tempPath)) {
+                    @unlink($tempPath);
+                }
+            });
+
             // 2. Extract text
-            $text = $this->textExtractor->extract($fullPath, $material->file_type);
+            $text = $this->textExtractor->extract($tempPath, $material->file_type);
 
             if (trim($text) === '') {
                 throw new \RuntimeException('No text could be extracted from the file.');
@@ -181,7 +320,6 @@ class ContentController extends Controller
                     'chunk_text'       => $chunkText,
                     'embedding'        => '[' . implode(',', $vector) . ']',
                     'created_at'       => $now,
-                    'updated_at'       => $now,
                 ];
             }
 
@@ -191,17 +329,16 @@ class ContentController extends Controller
                     $placeholders = [];
                     $values = [];
                     foreach ($batch as $row) {
-                        $placeholders[] = '(?, ?, ?, ?, ?::vector, ?, ?)';
+                        $placeholders[] = '(?, ?, ?, ?, ?::vector, ?)';
                         $values[] = $row['lesson_id'];
                         $values[] = $row['material_id'];
                         $values[] = $row['chunk_index'];
                         $values[] = $row['chunk_text'];
                         $values[] = $row['embedding'];
                         $values[] = $row['created_at'];
-                        $values[] = $row['updated_at'];
                     }
                     DB::statement(
-                        'INSERT INTO lesson_embeddings (lesson_id, material_id, chunk_index, chunk_text, embedding, created_at, updated_at) VALUES ' .
+                        'INSERT INTO lesson_embeddings (lesson_id, material_id, chunk_index, chunk_text, embedding, created_at) VALUES ' .
                         implode(', ', $placeholders),
                         $values
                     );
@@ -264,5 +401,153 @@ class ContentController extends Controller
             ->get();
 
         return response()->json($lessons);
+    }
+
+    /**
+     * Verify lesson ownership for the authenticated teacher.
+     *
+     * @param int $lessonId
+     * @param int $teacherId
+     * @return object|null
+     */
+    private function verifyLessonOwnership(int $lessonId, int $teacherId): ?object
+    {
+        return DB::table('lessons')
+            ->join('topics', 'lessons.topic_id', '=', 'topics.id')
+            ->join('classes', 'topics.class_id', '=', 'classes.id')
+            ->where('lessons.id', $lessonId)
+            ->where('classes.teacher_id', $teacherId)
+            ->select('lessons.id', 'lessons.title')
+            ->first();
+    }
+
+    /**
+     * Verify upload success and generate accessible URL.
+     *
+     * @param string $storagePath
+     * @param array $context
+     * @return array
+     */
+    private function verifyUploadAndGenerateUrl(string $storagePath, array $context): array
+    {
+        try {
+            // Generate public URL
+            $fileUrl = Storage::disk('public')->url($storagePath);
+            
+            if (!$fileUrl) {
+                return [
+                    'success' => false,
+                    'error' => 'Failed to generate public URL for uploaded file'
+                ];
+            }
+
+            // Test URL accessibility
+            $urlAccessible = $this->testUrlAccessibility($fileUrl, $context);
+            
+            if (!$urlAccessible) {
+                Log::warning('File uploaded but URL not immediately accessible', array_merge($context, [
+                    'storage_path' => $storagePath,
+                    'file_url' => $fileUrl,
+                    'note' => 'URL may become accessible after CDN propagation'
+                ]));
+            }
+
+            return [
+                'success' => true,
+                'file_url' => $fileUrl,
+                'url_accessible' => $urlAccessible
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('URL generation or verification failed', array_merge($context, [
+                'storage_path' => $storagePath,
+                'error' => $e->getMessage()
+            ]));
+            
+            return [
+                'success' => false,
+                'error' => 'Failed to generate or verify file URL: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Test URL accessibility with timeout and proper error handling.
+     *
+     * @param string $url
+     * @param array $context
+     * @return bool
+     */
+    private function testUrlAccessibility(string $url, array $context = []): bool
+    {
+        try {
+            $response = Http::timeout(10)->head($url);
+            $accessible = $response->successful();
+            
+            Log::info('URL accessibility test completed', array_merge($context, [
+                'url' => $url,
+                'status_code' => $response->status(),
+                'accessible' => $accessible
+            ]));
+            
+            return $accessible;
+            
+        } catch (\Exception $e) {
+            Log::warning('URL accessibility test failed with exception', array_merge($context, [
+                'url' => $url,
+                'error' => $e->getMessage(),
+                'note' => 'This may be normal for new uploads due to CDN propagation delays'
+            ]));
+            
+            return false;
+        }
+    }
+
+    /**
+     * Handle upload errors with user-friendly messages.
+     *
+     * @param \Exception $exception
+     * @param array $context
+     * @return \Illuminate\Http\JsonResponse
+     */
+    private function handleUploadError(\Exception $exception, array $context): \Illuminate\Http\JsonResponse
+    {
+        $errorMessage = $exception->getMessage();
+        $userFriendlyMessage = 'Failed to upload file';
+        $httpStatus = 500;
+
+        // Provide specific user-friendly messages based on error type
+        if (str_contains($errorMessage, 'authentication') || str_contains($errorMessage, 'InvalidAccessKeyId')) {
+            $userFriendlyMessage = 'File upload failed due to storage authentication issues';
+            $httpStatus = 502; // Bad Gateway - external service issue
+        } elseif (str_contains($errorMessage, 'SignatureDoesNotMatch')) {
+            $userFriendlyMessage = 'File upload failed due to storage configuration issues';
+            $httpStatus = 502;
+        } elseif (str_contains($errorMessage, 'NoSuchBucket') || str_contains($errorMessage, 'bucket')) {
+            $userFriendlyMessage = 'File upload failed - storage location not available';
+            $httpStatus = 502;
+        } elseif (str_contains($errorMessage, 'AccessDenied') || str_contains($errorMessage, 'permissions')) {
+            $userFriendlyMessage = 'File upload failed due to insufficient storage permissions';
+            $httpStatus = 502;
+        } elseif (str_contains($errorMessage, 'file size') || str_contains($errorMessage, 'too large')) {
+            $userFriendlyMessage = 'File is too large to upload';
+            $httpStatus = 413; // Payload Too Large
+        } elseif (str_contains($errorMessage, 'network') || str_contains($errorMessage, 'timeout')) {
+            $userFriendlyMessage = 'File upload failed due to network connectivity issues';
+            $httpStatus = 503; // Service Unavailable
+        } elseif (str_contains($errorMessage, 'verification failed')) {
+            $userFriendlyMessage = 'File upload completed but verification failed - please try again';
+            $httpStatus = 422; // Unprocessable Entity
+        }
+
+        return response()->json([
+            'message' => $userFriendlyMessage,
+            'error' => 'Please check your file and try again. If the problem persists, contact support.',
+            'technical_details' => config('app.debug') ? [
+                'error_message' => $errorMessage,
+                'error_type' => get_class($exception),
+                'context' => $context
+            ] : null
+        ], $httpStatus);
     }
 }

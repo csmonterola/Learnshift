@@ -9,9 +9,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('learning_materials', function (Blueprint $table) {
-            $table->enum('ingestion_status', ['none', 'pending', 'processing', 'indexed', 'failed'])
-                  ->default('none')
-                  ->after('ai_sync');
+            // Check if ingestion_status column exists before adding it
+            if (!Schema::hasColumn('learning_materials', 'ingestion_status')) {
+                $table->enum('ingestion_status', ['none', 'pending', 'processing', 'indexed', 'failed'])
+                      ->default('none')
+                      ->after('ai_sync');
+            }
         });
     }
 

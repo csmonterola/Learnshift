@@ -42,13 +42,18 @@ import { AdminDashboard } from './pages/admin/Dashboard'
 import { AdminAccountGeneration } from './pages/admin/AccountGeneration'
 import { AdminUserDirectory } from './pages/admin/UserDirectory'
 import { AdminClassManagement } from './pages/admin/ClassManagement'
+import { AdminClassDetail } from './pages/admin/ClassDetail'
 import { AdminSettings } from './pages/admin/Settings'
 import { ActivityLogPage } from './pages/admin/ActivityLog'
 
 // Parent Pages
 import { ParentDashboard } from './pages/parent/Dashboard'
 import { ParentCourseMaterials } from './pages/parent/CourseMaterials'
-import { ParentGuidedSessions } from './pages/parent/GuidedSessions'
+import { ParentStudentActivity } from './pages/parent/StudentActivity'
+import { ParentQuizResults } from './pages/parent/QuizResults'
+import { ParentLessonMastery } from './pages/parent/LessonMastery'
+import { ParentAITutorInteractions } from './pages/parent/AITutorInteractions'
+import { ParentLessonView } from './pages/parent/LessonView'
 import { ParentSettings } from './pages/parent/Settings'
 
 const Placeholder = ({ label }: { label: string }) => (
@@ -105,6 +110,7 @@ export function App() {
               <Route path="/admin/account-generation" element={<AdminAccountGeneration />} />
               <Route path="/admin/directory" element={<AdminUserDirectory />} />
               <Route path="/admin/classes" element={<AdminClassManagement />} />
+              <Route path="/admin/classes/:classId" element={<AdminClassDetail />} />
               <Route path="/admin/settings" element={<AdminSettings />} />
             </Route>
           </Route>
@@ -114,7 +120,11 @@ export function App() {
             <Route element={<ParentLayout />}>
               <Route path="/parent" element={<ParentDashboard />} />
               <Route path="/parent/course-materials" element={<ParentCourseMaterials />} />
-              <Route path="/parent/guided-sessions" element={<ParentGuidedSessions />} />
+              <Route path="/parent/course-materials/:childId/class/:classId/topic/:topicId/lesson/:lessonId" element={<ParentLessonView />} />
+              <Route path="/parent/activity" element={<ParentStudentActivity />} />
+              <Route path="/parent/activity/quizzes" element={<ParentQuizResults />} />
+              <Route path="/parent/activity/mastery" element={<ParentLessonMastery />} />
+              <Route path="/parent/activity/ai-interactions" element={<ParentAITutorInteractions />} />
               <Route path="/parent/settings" element={<ParentSettings />} />
             </Route>
           </Route>
