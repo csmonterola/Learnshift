@@ -1,0 +1,22 @@
+
+   Psy\Exception\ParseErrorException 
+
+  PHP Parse error: Syntax error, unexpected T_NS_SEPARATOR, expecting T_VARIABLE on line 1
+
+  at C:\Users\walbe\OneDrive\Documents\GitHub\Learnshift\backend\vendor\psy\psysh\src\Exception\ParseErrorException.php:44
+     40▕      * @param \PhpParser\Error $e
+     41▕      */
+     42▕     public static function fromParseError(\PhpParser\Error $e): self
+     43▕     {
+  ➜  44▕         return new self($e->getRawMessage(), $e->getAttributes());
+     45▕     }
+     46▕ }
+     47▕
+
+  1   C:\Users\walbe\OneDrive\Documents\GitHub\Learnshift\backend\vendor\psy\psysh\src\CodeCleaner.php:657
+      Psy\Exception\ParseErrorException::fromParseError(Object(PhpParser\Error))
+
+  2   C:\Users\walbe\OneDrive\Documents\GitHub\Learnshift\backend\vendor\psy\psysh\src\CodeCleaner.php:273
+      Psy\CodeCleaner::parse("<?php echo '=== Materials ===' . PHP_EOL; DB::table('learning_materials')->select('id','lesson_id','file_name','ingestion_status')->get()->each(function(\$m) { echo "  #{\$m- lesson={\$m- {\$m- status={\$m-  lesson={\$e- {\$e- chunks" . PHP_EOL; });
+")
+

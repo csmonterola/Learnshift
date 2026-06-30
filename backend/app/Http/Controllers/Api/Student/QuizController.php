@@ -3,8 +3,6 @@
 namespace App\Http\Controllers\Api\Student;
 
 use App\Http\Controllers\Controller;
-use App\Services\EnrollmentGuard;
-use App\Services\Mastery\MasteryCalculator;
 use App\Models\ActivityLog;
 use App\Models\Lesson;
 use App\Models\QuizResult;
@@ -17,10 +15,10 @@ use Illuminate\Support\Facades\Log;
 
 class QuizController extends Controller
 {
+    private const MAX_ATTEMPTS = 3;
+
     public function __construct(
         private readonly QuestionGenerator $questionGenerator,
-        private readonly EnrollmentGuard $enrollmentGuard,
-        private readonly MasteryCalculator $masteryCalculator,
     ) {}
 
     /**
@@ -33,17 +31,21 @@ class QuizController extends Controller
     {
         $student = $request->user();
 
-        $denied = $this->enrollmentGuard->denyIfNotEnrolled($student, $lesson);
-        if ($denied) return $denied;
+        // Verify enrollment
+        $isEnrolled = $lesson->topic->schoolClass->students()
+            ->where('users.id', $student->id)
+            ->exists();
 
-        $maxAttempts = (int) config('quiz.max_attempts', 3);
+        if (!$isEnrolled) {
+            return response()->json(['error' => 'You are not enrolled in this class.'], 403);
+        }
 
         // Check attempt limit
         $attemptCount = QuizResult::where('student_id', $student->id)
             ->where('lesson_id', $lesson->id)
             ->count();
 
-        if ($attemptCount >= $maxAttempts) {
+        if ($attemptCount >= self::MAX_ATTEMPTS) {
             return response()->json(['error' => 'You have used all quiz attempts for this lesson.'], 403);
         }
 
@@ -54,7 +56,7 @@ class QuizController extends Controller
                 'questions'     => $result['questions'],
                 'source'        => $result['source'],
                 'attempt_number' => $attemptCount + 1,
-                'max_attempts'   => $maxAttempts,
+                'max_attempts'   => self::MAX_ATTEMPTS,
             ]);
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 502);
@@ -85,17 +87,21 @@ class QuizController extends Controller
         $answers   = $validated['answers'];
         $questions = $validated['questions'];
 
-        $denied = $this->enrollmentGuard->denyIfNotEnrolled($student, $lesson);
-        if ($denied) return $denied;
+        // Verify enrollment
+        $isEnrolled = $lesson->topic->schoolClass->students()
+            ->where('users.id', $student->id)
+            ->exists();
 
-        $maxAttempts = (int) config('quiz.max_attempts', 3);
+        if (!$isEnrolled) {
+            return response()->json(['error' => 'You are not enrolled in this class.'], 403);
+        }
 
         // Check attempt limit
         $attemptCount = QuizResult::where('student_id', $student->id)
             ->where('lesson_id', $lesson->id)
             ->count();
 
-        if ($attemptCount >= $maxAttempts) {
+        if ($attemptCount >= self::MAX_ATTEMPTS) {
             return response()->json(['error' => 'You have used all quiz attempts for this lesson.'], 403);
         }
 
@@ -146,7 +152,7 @@ class QuizController extends Controller
             'total'           => $total,
             'best_score'      => $bestScore,
             'attempt_number'  => $newAttemptCount,
-            'attempts_left'   => $maxAttempts - $newAttemptCount,
+            'attempts_left'   => self::MAX_ATTEMPTS - $newAttemptCount,
             'mastery'         => $this->calculateMastery($bestScore),
         ]);
     }
@@ -160,8 +166,13 @@ class QuizController extends Controller
     {
         $student = $request->user();
 
-        $denied = $this->enrollmentGuard->denyIfNotEnrolled($student, $lesson);
-        if ($denied) return $denied;
+        $isEnrolled = $lesson->topic->schoolClass->students()
+            ->where('users.id', $student->id)
+            ->exists();
+
+        if (!$isEnrolled) {
+            return response()->json(['error' => 'You are not enrolled in this class.'], 403);
+        }
 
         $attempts = QuizResult::where('student_id', $student->id)
             ->where('lesson_id', $lesson->id)
@@ -178,8 +189,8 @@ class QuizController extends Controller
         return response()->json([
             'attempts'       => $attempts,
             'attempt_count'  => $attempts->count(),
-            'max_attempts'   => $maxAttempts,
-            'attempts_left'  => $maxAttempts - $attempts->count(),
+            'max_attempts'   => self::MAX_ATTEMPTS,
+            'attempts_left'  => self::MAX_ATTEMPTS - $attempts->count(),
             'best_score'     => $bestScore,
             'mastery'        => $progress?->mastery_percentage ?? 0,
         ]);
@@ -232,6 +243,8 @@ class QuizController extends Controller
      */
     private function calculateMastery(?int $bestScore): int
     {
-        return $this->masteryCalculator->calculateLessonMastery($bestScore);
+        if ($bestScore === null) return 0;
+        if ($bestScore >= 70) return 100;
+        return 50;
     }
 }

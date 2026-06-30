@@ -15,8 +15,8 @@ interface AuthContextType {
   user: User | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
+  signUp: (name: string, email: string, password: string, role: Role) => Promise<void>
   logout: () => Promise<void>
-  forgotPassword: (email: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -25,29 +25,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Restore session on page refresh via HttpOnly cookie (auto-sent with credentials)
+  // Restore session on page refresh
   useEffect(() => {
-    authApi
-      .me()
-      .then((res) => {
-        const userData = res.data
-        setUser({
-          id: userData.id,
-          name: userData.name,
-          role: userData.role,
-          email: userData.email,
-          avatar: userData.avatar,
+    const token = localStorage.getItem('auth_token')
+    if (token) {
+      authApi
+        .me()
+        .then((res) => {
+          const userData = res.data
+          setUser({
+            id: userData.id,
+            name: userData.name,
+            role: userData.role,
+            email: userData.email,
+            avatar: userData.avatar,
+          })
         })
-      })
-      .catch(() => {
-        setUser(null)
-      })
-      .finally(() => setLoading(false))
+        .catch(() => {
+          localStorage.removeItem('auth_token')
+        })
+        .finally(() => setLoading(false))
+    } else {
+      setLoading(false)
+    }
   }, [])
 
   const login = async (email: string, password: string) => {
     const res = await authApi.login(email, password)
-    const { user: userData } = res.data
+    const { user: userData, token } = res.data
+    localStorage.setItem('auth_token', token)
     setUser({
       id: userData.id,
       name: userData.name,
@@ -57,8 +63,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }
 
-  const forgotPassword = async (email: string) => {
-    await authApi.forgotPassword(email)
+  const signUp = async (name: string, email: string, password: string, role: Role) => {
+    const res = await authApi.signup(name, email, password, password, role as string)
+    const { user: userData, token } = res.data
+    localStorage.setItem('auth_token', token)
+    setUser({
+      id: userData.id,
+      name: userData.name,
+      role: userData.role,
+      email: userData.email,
+      avatar: userData.avatar,
+    })
   }
 
   const logout = async () => {
@@ -67,11 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       // Ignore errors
     }
+    localStorage.removeItem('auth_token')
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, forgotPassword }}>
+    <AuthContext.Provider value={{ user, loading, login, signUp, logout }}>
       {children}
     </AuthContext.Provider>
   )

@@ -38,7 +38,8 @@ class EmbeddingService
     {
         $response = Http::timeout(30)
             ->withToken(config('services.mistral.api_key'))
-                        ->post(self::API_URL, [
+            ->withoutVerifying()
+            ->post(self::API_URL, [
                 'model' => config('services.mistral.embedding_model', 'mistral-embed'),
                 'input' => $texts,
             ]);

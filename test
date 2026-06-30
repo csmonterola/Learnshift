@@ -1,0 +1,31 @@
+<?php
+require_once __DIR__ . '/backend/vendor/autoload.php';
+$app = require_once __DIR__ . '/backend/bootstrap/app.php';
+$app->make('Illuminate\Contracts\Console\Kernel')->bootstrap();
+
+// Test upload a small file
+try {
+    $testPath = sys_get_temp_dir() . '/test_upload_' . uniqid() . '.txt';
+    file_put_contents($testPath, 'test content');
+    
+    $uploaded = Illuminate\Support\Facades\Storage::disk('public')->putFileAs(
+        'test', 
+        new Illuminate\Http\UploadedFile($testPath, 'test.txt', 'text/plain', null, true), 
+        'test.txt'
+    );
+    
+    echo 'PUT SUCCESS: ' . ($uploaded ?: 'false') . PHP_EOL;
+    
+    // Try to get URL
+    $url = Illuminate\Support\Facades\Storage::disk('public')->url($uploaded);
+    echo 'URL: ' . $url . PHP_EOL;
+    
+    // Check if file exists
+    $exists = Illuminate\Support\Facades\Storage::disk('public')->exists($uploaded);
+    echo 'EXISTS: ' . ($exists ? 'true' : 'false') . PHP_EOL;
+    
+} catch (\Throwable $e) {
+    echo 'PUT ERROR: ' . $e->getMessage() . PHP_EOL;
+    $prev = $e->getPrevious();
+    if ($prev) echo 'CAUSE: ' . $prev->getMessage() . PHP_EOL;
+}

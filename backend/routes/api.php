@@ -34,8 +34,7 @@ use Illuminate\Support\Facades\Route;
 
 // ── Public ────────────────────────────────────────────────────────
 Route::post('/auth/login', [AuthController::class, 'login']);
-Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
-Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
+Route::post('/auth/signup', [AuthController::class, 'signup']);
 
 // ── Authenticated ─────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
@@ -62,7 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/skill-tree',                             [CurriculumController::class, 'skillTree']);
 
     // ── Admin ────────────────────────────────────────────────────
-    Route::middleware('role:admin')->prefix('admin')->group(function () {
+    Route::prefix('admin')->group(function () {
         Route::get('dashboard',       [AdminDashboardController::class, 'index']);
         Route::get('activity-logs',   [AdminDashboardController::class, 'activityLogs']);
         Route::apiResource('users',   AdminUserController::class);
@@ -75,7 +74,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // ── Teacher ──────────────────────────────────────────────────
-    Route::middleware('role:teacher')->prefix('teacher')->group(function () {
+    Route::prefix('teacher')->group(function () {
         Route::get('dashboard',                           [TeacherDashboardController::class, 'index']);
         Route::get('students/search',                     [TeacherStudentController::class, 'searchStudents']);
         Route::get('students',                            [TeacherStudentController::class, 'index']);
@@ -120,7 +119,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // ── Student ──────────────────────────────────────────────────
-    Route::middleware('role:student')->prefix('student')->group(function () {
+    Route::prefix('student')->group(function () {
         Route::get('dashboard',                           [StudentDashboardController::class, 'index']);
 
         // Parent link requests
@@ -169,7 +168,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // ── Parent ───────────────────────────────────────────────────
-    Route::middleware('role:parent')->prefix('parent')->group(function () {
+    Route::prefix('parent')->group(function () {
         Route::get('dashboard',                               [ParentDashboardController::class, 'index']);
         Route::get('students/search',                         [ParentDashboardController::class, 'searchStudents']);
         Route::post('link-child',                             [ParentDashboardController::class, 'linkChild']);

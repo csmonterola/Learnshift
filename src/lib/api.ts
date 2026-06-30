@@ -9,11 +9,21 @@ const api = axios.create({
   },
 })
 
-// On 401, redirect to login (token cookie is managed by the server)
+// Attach the Sanctum token from localStorage on every request
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// On 401, clear token and redirect to login
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
+      localStorage.removeItem('auth_token')
       window.location.href = '/'
     }
     return Promise.reject(err)
@@ -27,11 +37,12 @@ export const authApi = {
   login: (email: string, password: string) =>
     api.post('/auth/login', { email, password }),
 
+  signup: (name: string, email: string, password: string, password_confirmation: string, role: string) =>
+    api.post('/auth/signup', { name, email, password, password_confirmation, role }),
+
   logout: () => api.post('/auth/logout'),
+
   me: () => api.get('/auth/me'),
-  forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
-  resetPassword: (data: { token: string; email: string; password: string; password_confirmation: string }) =>
-    api.post('/auth/reset-password', data),
 }
 
 // ── Student ───────────────────────────────────────────────────────
