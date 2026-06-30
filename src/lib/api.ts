@@ -9,12 +9,49 @@ const api = axios.create({
   },
 })
 
+let csrfPromise: Promise<void> | null = null
+
+const getCsrfToken = () => {
+  const match = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]+)/)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+const ensureCsrfCookie = async () => {
+  if (csrfPromise) {
+    return csrfPromise
+  }
+
+  csrfPromise = axios
+    .get('http://localhost:8000/sanctum/csrf-cookie', { withCredentials: true })
+    .then(() => undefined)
+    .finally(() => {
+      csrfPromise = null
+    })
+
+  return csrfPromise
+}
+
 // Attach the Sanctum token from localStorage on every request
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   const token = localStorage.getItem('auth_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+
+  if (config.url?.includes('/sanctum/csrf-cookie')) {
+    return config
+  }
+
+  const method = config.method?.toLowerCase()
+  if (method && ['post', 'put', 'patch', 'delete'].includes(method)) {
+    await ensureCsrfCookie()
+
+    const csrfToken = getCsrfToken()
+    if (csrfToken) {
+      config.headers['X-XSRF-TOKEN'] = csrfToken
+    }
+  }
+
   return config
 })
 
