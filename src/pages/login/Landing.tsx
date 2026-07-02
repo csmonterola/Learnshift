@@ -287,33 +287,7 @@ export function Landing() {
         </form>
 
         {/* Divider */}
-        <div className="mt-8 mb-6 relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-200" />
-          </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="px-4 bg-white text-gray-400 font-semibold tracking-wider">OR</span>
-          </div>
-        </div>
-
-        {/* Toggle Sign Up / Login */}
-        <p className="text-center text-[15px] text-gray-500">
-          {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
-          <button
-            type="button"
-            onClick={() => {
-              setIsSignUp(!isSignUp)
-              setError(null)
-              setEmail('')
-              setPassword('')
-              setName('')
-              setSelectedRole(null)
-            }}
-            className="font-bold text-accent-500 hover:text-accent-600 transition-colors"
-          >
-            {isSignUp ? 'Log In' : 'Sign Up'}
-          </button>
-        </p>
+        
       </motion.div>
     </div>
   )
