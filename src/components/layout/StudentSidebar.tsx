@@ -11,7 +11,13 @@ import {
   Settings,
   LogOut,
   Users,
+  X,
 } from 'lucide-react'
+
+interface StudentSidebarProps {
+  isOpen?: boolean
+  onClose?: () => void
+}
 
 const navItems = [
   { label: 'Dashboard',   icon: LayoutGrid,    path: '/student' },
@@ -23,7 +29,7 @@ const navItems = [
   { label: 'Settings',    icon: Settings,       path: '/student/settings' },
 ]
 
-export function StudentSidebar() {
+export function StudentSidebar({ isOpen = true, onClose }: StudentSidebarProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
@@ -33,7 +39,17 @@ export function StudentSidebar() {
   }
 
   return (
-    <aside className="w-[260px] bg-white h-screen sticky top-0 flex flex-col border-r border-gray-100 shrink-0">
+    <aside className={`
+      w-[260px] bg-white h-screen flex flex-col border-r border-gray-100
+      fixed inset-y-0 left-0 z-30 transform transition-transform duration-300 ease-in-out
+      lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 lg:shrink-0
+      ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+    `}>
+      {/* Mobile close button */}
+      <button onClick={() => onClose?.()} className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 lg:hidden">
+        <X className="w-5 h-5" />
+      </button>
+
       {/* Profile Section */}
       <div className="flex flex-col items-center pt-10 pb-6 px-6">
         <div className="w-20 h-20 rounded-full bg-emerald-50 mb-4 p-1 overflow-hidden border-2 border-emerald-100">

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import {
@@ -12,6 +12,8 @@ import {
   Bell,
   ChevronRight,
   BookOpen,
+  Menu,
+  X,
 } from 'lucide-react'
 
 const navItems = [
@@ -26,6 +28,7 @@ export function AdminLayout() {
   const location = useLocation()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const handleLogout = () => {
     logout()
@@ -34,8 +37,22 @@ export function AdminLayout() {
 
   return (
     <div className="flex h-screen w-full bg-[#f3f4f6] font-sans text-gray-900 overflow-hidden">
+      {/* Backdrop */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 fixed left-0 top-0 h-screen z-20">
+      <aside className={`
+        w-64 bg-white border-r border-slate-200 flex flex-col h-screen
+        fixed inset-y-0 left-0 z-30 transform transition-transform duration-300 ease-in-out
+        lg:translate-x-0 lg:z-20
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        {/* Mobile close */}
+        <button onClick={() => setSidebarOpen(false)} className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 lg:hidden">
+          <X className="w-5 h-5" />
+        </button>
         {/* Logo */}
         <div className="h-16 flex items-center px-6 border-b border-slate-200">
           <div className="flex items-center gap-2 font-extrabold text-xl tracking-tight">
@@ -118,11 +135,14 @@ export function AdminLayout() {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden ml-64">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden ml-0 lg:ml-64">
         {/* Topbar */}
-        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-8 flex-shrink-0 sticky top-0 z-10">
-          <div className="flex-1 max-w-md">
-            <div className="relative">
+        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 flex-shrink-0 sticky top-0 z-10">
+          <div className="flex items-center gap-3 flex-1 max-w-md">
+            <button onClick={() => setSidebarOpen(true)} className="p-1 text-gray-600 hover:text-gray-900 lg:hidden">
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
@@ -132,7 +152,7 @@ export function AdminLayout() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-500">Tuesday, May 12, 2026</span>
+            <span className="hidden sm:inline text-sm text-slate-500">Tuesday, May 12, 2026</span>
             <button className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
@@ -146,7 +166,7 @@ export function AdminLayout() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto">
             <Outlet />
           </div>

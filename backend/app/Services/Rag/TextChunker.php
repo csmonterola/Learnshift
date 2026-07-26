@@ -16,39 +16,82 @@ class TextChunker
      */
     public function chunk(string $text, int $maxTokens = 500, int $overlap = 50): array
     {
-        $text = trim($text);
+        return array_map(
+            fn($item) => $item['text'],
+            $this->chunkWithPages([['page_number' => null, 'text' => $text]], $maxTokens, $overlap)
+        );
+    }
 
-        if ($text === '') {
+    /**
+     * Split per-page text into overlapping chunks, tagging each chunk with the
+     * page_number it originated from.
+     *
+     * Input:  [{page_number: int|null, text: string}, ...]
+     * Output: [{page_number: int|null, text: string}, ...]
+     *
+     * If a chunk's word-boundary overlap spans two pages, it is tagged with the
+     * page it *started* on (documented choice — the chunk primarily belongs to
+     * the page where its content began).
+     *
+     * @param  array{page_number: int|null, text: string}[]  $pagedText
+     * @param  int  $maxTokens
+     * @param  int  $overlap
+     * @return array{page_number: int|null, text: string}[]
+     */
+    public function chunkWithPages(array $pagedText, int $maxTokens = 500, int $overlap = 50): array
+    {
+        if (empty($pagedText)) {
             return [];
         }
 
         $maxChars     = $maxTokens * 4;
         $overlapChars = $overlap * 4;
 
-        // If the whole text fits in one chunk, return it directly
-        if (mb_strlen($text) <= $maxChars) {
-            return [$text];
+        // Build word-indexed array where each word knows its page_number
+        $wordEntries = [];     // [{word, page_number}]
+        foreach ($pagedText as $page) {
+            $pageNum = $page['page_number'];
+            $words = preg_split('/\s+/', trim($page['text']), -1, PREG_SPLIT_NO_EMPTY);
+            foreach ($words as $word) {
+                $wordEntries[] = [
+                    'word'        => $word,
+                    'page_number' => $pageNum,
+                ];
+            }
         }
 
-        // Split on whitespace to get words
-        $words = preg_split('/\s+/', $text, -1, PREG_SPLIT_NO_EMPTY);
+        if (empty($wordEntries)) {
+            return [];
+        }
+
+        // If the entire text fits in one chunk, return it directly
+        $totalChars = array_sum(array_map(fn($e) => mb_strlen($e['word']) + 1, $wordEntries));
+        if ($totalChars <= $maxChars) {
+            $allText = implode(' ', array_map(fn($e) => $e['word'], $wordEntries));
+            return [['page_number' => $wordEntries[0]['page_number'], 'text' => $allText]];
+        }
 
         $chunks       = [];
-        $currentWords = [];
+        $currentWords = [];   // word entries for the current chunk
         $currentLen   = 0;
+        $pageOverride = null; // if set, overrides the page tag for this chunk
 
-        foreach ($words as $word) {
-            $wordLen = mb_strlen($word) + 1; // +1 for the space separator
+        foreach ($wordEntries as $entry) {
+            $wordLen = mb_strlen($entry['word']) + 1;
 
             if ($currentLen + $wordLen > $maxChars && !empty($currentWords)) {
-                // Seal the current chunk
-                $chunks[] = implode(' ', $currentWords);
+                $pageTag = $pageOverride ?? $currentWords[0]['page_number'];
 
-                // Carry over the overlap: keep the last N characters worth of words
+                $chunks[] = [
+                    'page_number' => $pageTag,
+                    'text'        => implode(' ', array_map(fn($e) => $e['word'], $currentWords)),
+                ];
+
+                // Overlap: keep the last N characters worth of words from the sealed chunk
                 $overlapWords = [];
                 $overlapLen   = 0;
                 foreach (array_reverse($currentWords) as $w) {
-                    $wLen = mb_strlen($w) + 1;
+                    $wLen = mb_strlen($w['word']) + 1;
                     if ($overlapLen + $wLen > $overlapChars) {
                         break;
                     }
@@ -58,15 +101,20 @@ class TextChunker
 
                 $currentWords = $overlapWords;
                 $currentLen   = $overlapLen;
+                $pageOverride = null;
             }
 
-            $currentWords[] = $word;
+            $currentWords[] = $entry;
             $currentLen    += $wordLen;
         }
 
-        // Add any remaining words as the last chunk
+        // Remaining words as the last chunk
         if (!empty($currentWords)) {
-            $chunks[] = implode(' ', $currentWords);
+            $pageTag = $pageOverride ?? $currentWords[0]['page_number'];
+            $chunks[] = [
+                'page_number' => $pageTag,
+                'text'        => implode(' ', array_map(fn($e) => $e['word'], $currentWords)),
+            ];
         }
 
         return $chunks;

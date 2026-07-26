@@ -9,13 +9,29 @@ use PhpOffice\PhpPresentation\IOFactory as PresentationIOFactory;
 
 class TextExtractor
 {
+    /**
+     * Extract all text as a single flattened string.
+     * Kept for backward compatibility; internally delegates to extractWithPages().
+     */
     public function extract(string $filePath, string $fileType): string
+    {
+        $pages = $this->extractWithPages($filePath, $fileType);
+
+        return implode("\n", array_map(fn($p) => $p['text'], $pages));
+    }
+
+    /**
+     * Extract text per page/slide.
+     *
+     * @return array{page_number: int, text: string}[]
+     */
+    public function extractWithPages(string $filePath, string $fileType): array
     {
         try {
             return match (strtolower($fileType)) {
-                'pdf'  => $this->extractPdf($filePath),
-                'docx' => $this->extractDocx($filePath),
-                'pptx' => $this->extractPptx($filePath),
+                'pdf'  => $this->extractPdfWithPages($filePath),
+                'pptx' => $this->extractPptxWithPages($filePath),
+                'docx' => $this->extractDocxAsSinglePage($filePath),
                 default => throw new TextExtractionException(
                     "Unsupported file type: {$fileType}"
                 ),
@@ -31,17 +47,70 @@ class TextExtractor
         }
     }
 
-    private function extractPdf(string $filePath): string
+    /**
+     * @return array{page_number: int, text: string}[]
+     */
+    private function extractPdfWithPages(string $filePath): array
     {
         $parser = new PdfParser();
         $pdf = $parser->parseFile($filePath);
-        return $pdf->getText();
+
+        $result = [];
+        foreach ($pdf->getPages() as $i => $page) {
+            $text = trim($page->getText());
+            if ($text !== '') {
+                $result[] = [
+                    'page_number' => $i + 1,
+                    'text'        => $text,
+                ];
+            }
+        }
+
+        return $result;
     }
 
-    private function extractDocx(string $filePath): string
+    /**
+     * @return array{page_number: int, text: string}[]
+     */
+    private function extractPptxWithPages(string $filePath): array
+    {
+        $presentation = PresentationIOFactory::load($filePath);
+
+        $result = [];
+        foreach ($presentation->getAllSlides() as $i => $slide) {
+            $text = '';
+            foreach ($slide->getShapeCollection() as $shape) {
+                if ($shape instanceof \PhpOffice\PhpPresentation\Shape\RichText) {
+                    foreach ($shape->getParagraphs() as $paragraph) {
+                        foreach ($paragraph->getRichTextElements() as $element) {
+                            $text .= $element->getText() . ' ';
+                        }
+                        $text .= "\n";
+                    }
+                }
+            }
+            $text = trim($text);
+            if ($text !== '') {
+                $result[] = [
+                    'page_number' => $i + 1,
+                    'text'        => $text,
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * DOCX has no native page concept — return as a single entry with page_number = null.
+     *
+     * @return array{page_number: null, text: string}[]
+     */
+    private function extractDocxAsSinglePage(string $filePath): array
     {
         $phpWord = WordIOFactory::load($filePath);
         $text = '';
+
         foreach ($phpWord->getSections() as $section) {
             foreach ($section->getElements() as $element) {
                 if (method_exists($element, 'getText')) {
@@ -55,25 +124,9 @@ class TextExtractor
                 }
             }
         }
-        return $text;
-    }
 
-    private function extractPptx(string $filePath): string
-    {
-        $presentation = PresentationIOFactory::load($filePath);
-        $text = '';
-        foreach ($presentation->getAllSlides() as $slide) {
-            foreach ($slide->getShapeCollection() as $shape) {
-                if ($shape instanceof \PhpOffice\PhpPresentation\Shape\RichText) {
-                    foreach ($shape->getParagraphs() as $paragraph) {
-                        foreach ($paragraph->getRichTextElements() as $element) {
-                            $text .= $element->getText() . ' ';
-                        }
-                        $text .= "\n";
-                    }
-                }
-            }
-        }
-        return $text;
+        $text = trim($text);
+
+        return $text !== '' ? [['page_number' => null, 'text' => $text]] : [];
     }
 }

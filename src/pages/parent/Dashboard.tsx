@@ -144,7 +144,7 @@ export function ParentDashboard() {
   const hasChildren = data?.children && data.children.length > 0
 
   return (
-    <div className="max-w-7xl mx-auto p-8">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
       {/* Toast */}
       {toast && (
         <div className="fixed top-4 right-4 bg-emerald-500 text-white px-6 py-3 rounded-xl shadow-lg z-50 text-sm font-medium">
@@ -223,7 +223,7 @@ export function ParentDashboard() {
           {selectedChild && (
             <>
               {/* Stats */}
-              <div className="grid grid-cols-4 gap-4 mb-8">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
                 {[
                   { icon: StarIcon, value: `${selectedChild.stats.overall_mastery}%`, label: 'Overall Mastery', color: 'text-amber-500' },
                   { icon: BookOpen, value: `${selectedChild.stats.lessons_completed}/${selectedChild.stats.total_lessons}`, label: 'Lessons Completed', color: 'text-emerald-500' },
@@ -303,8 +303,8 @@ export function ParentDashboard() {
                       <thead>
                         <tr className="bg-slate-50/50 border-b border-gray-100">
                           <th className="py-3 px-4 text-xs font-bold text-gray-400 tracking-wider">LESSON</th>
-                          <th className="py-3 px-4 text-xs font-bold text-gray-400 tracking-wider">SUBJECT</th>
-                          <th className="py-3 px-4 text-xs font-bold text-gray-400 tracking-wider">CLASS</th>
+                          <th className="hidden sm:table-cell py-3 px-4 text-xs font-bold text-gray-400 tracking-wider">SUBJECT</th>
+                          <th className="hidden sm:table-cell py-3 px-4 text-xs font-bold text-gray-400 tracking-wider">CLASS</th>
                           <th className="py-3 px-4 text-xs font-bold text-gray-400 tracking-wider">MASTERY</th>
                           <th className="py-3 px-4 text-xs font-bold text-gray-400 tracking-wider">STATUS</th>
                         </tr>
@@ -316,8 +316,8 @@ export function ParentDashboard() {
                               <div className="font-semibold text-sm text-gray-900">{lp.lesson_title}</div>
                               <div className="text-xs text-gray-500">{lp.topic_title}</div>
                             </td>
-                            <td className="py-3 px-4 text-sm text-gray-600">{lp.subject_name}</td>
-                            <td className="py-3 px-4 text-sm text-gray-600">{lp.class_name}</td>
+                            <td className="hidden sm:table-cell py-3 px-4 text-sm text-gray-600">{lp.subject_name}</td>
+                            <td className="hidden sm:table-cell py-3 px-4 text-sm text-gray-600">{lp.class_name}</td>
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-2">
                                 <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden max-w-[100px]">

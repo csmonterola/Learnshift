@@ -10,6 +10,8 @@ interface GeneratedQuestion {
   correct_index: number
   explanation: string
   difficulty: string
+  image_url?: string | null
+  option_image_urls?: (string | null)[] | null
 }
 
 interface PracticeFeedback {
@@ -41,6 +43,7 @@ function DifficultyBadge({ difficulty }: { difficulty: string }) {
 // ── PracticePanel ──────────────────────────────────────────────────
 export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelProps) {
   const [questions, setQuestions]     = useState<GeneratedQuestion[]>([])
+  const [source, setSource]           = useState<string | null>(null)
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
   const [current, setCurrent]         = useState(0)
@@ -64,6 +67,7 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
     try {
       const res = await studentApi.generatePracticeQuestions(lessonId)
       setQuestions(res.data.questions)
+      setSource(res.data.source || null)
     } catch (err: any) {
       const msg = err?.response?.data?.error || 'Failed to generate questions. Please try again.'
       setError(msg)
@@ -162,6 +166,13 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
   // ── Question Screen ────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full p-5">
+      {/* Fallback notice */}
+      {source === 'fallback' && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+          AI-generated questions unavailable — showing sample questions. Try generating again.
+        </div>
+      )}
+
       {/* Progress bar */}
       <div className="mb-5">
         <div className="flex justify-between text-xs text-gray-400 mb-1.5">
@@ -175,6 +186,11 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
       </div>
 
       {/* Question */}
+      {q.image_url && (
+        <div className="mb-4 rounded-2xl overflow-hidden border border-gray-200">
+          <img src={q.image_url} alt="Question illustration" className="w-full max-h-64 object-contain bg-gray-50" />
+        </div>
+      )}
       <div className="bg-gray-50 rounded-2xl p-5 mb-4">
         <div className="flex items-start justify-between gap-3">
           <p className="font-bold text-gray-900 text-base leading-snug">{q.question}</p>
@@ -200,6 +216,9 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
                 <span className="w-6 h-6 rounded-full border border-current flex items-center justify-center text-xs font-bold shrink-0">
                   {['A','B','C','D'][i]}
                 </span>
+                {q.option_image_urls?.[i] && (
+                  <img src={q.option_image_urls[i]!} alt="" className="w-8 h-8 rounded object-cover border border-gray-200 shrink-0" />
+                )}
                 {opt}
               </span>
             </button>

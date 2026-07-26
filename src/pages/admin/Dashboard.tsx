@@ -180,7 +180,7 @@ export function AdminDashboard() {
             <thead>
               <tr className="bg-slate-50/50 border-b border-gray-100">
                 <th className="py-4 px-6 text-xs font-bold text-gray-400 tracking-wider w-1/2">EVENT</th>
-                <th className="py-4 px-6 text-xs font-bold text-gray-400 tracking-wider w-1/4">DETAIL</th>
+                <th className="hidden sm:table-cell py-4 px-6 text-xs font-bold text-gray-400 tracking-wider w-1/4">DETAIL</th>
                 <th className="py-4 px-6 text-xs font-bold text-gray-400 tracking-wider w-1/4">TIMESTAMP</th>
               </tr>
             </thead>
@@ -208,7 +208,7 @@ export function AdminDashboard() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-4 px-6">
+                    <td className="hidden sm:table-cell py-4 px-6">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600 capitalize">
                         {a.action.replace(/_/g, ' ')}
                       </span>

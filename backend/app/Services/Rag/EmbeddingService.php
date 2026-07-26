@@ -3,17 +3,13 @@
 namespace App\Services\Rag;
 
 use App\Exceptions\EmbeddingException;
-use Illuminate\Support\Facades\Http;
+use App\Services\Ai\AiProviderFactory;
 
 class EmbeddingService
 {
-    private const API_URL = 'https://api.mistral.ai/v1/embeddings';
-    private const MODEL   = 'mistral-embed';
-
     /**
      * Embed a single text string and return its float vector.
      *
-     * @param  string  $text
      * @return float[]
      *
      * @throws EmbeddingException
@@ -36,31 +32,16 @@ class EmbeddingService
      */
     public function embedBatch(array $texts): array
     {
-        $response = Http::timeout(30)
-            ->withToken(config('services.mistral.api_key'))
-            ->withoutVerifying()
-            ->post(self::API_URL, [
-                'model' => config('services.mistral.embedding_model', 'mistral-embed'),
-                'input' => $texts,
-            ]);
+        try {
+            $provider = AiProviderFactory::make('embedding');
 
-        if ($response->failed()) {
+            return $provider->embed($texts);
+        } catch (\RuntimeException $e) {
             throw new EmbeddingException(
-                'Mistral embedding API error: HTTP ' . $response->status()
+                'Embedding failed: '.$e->getMessage(),
+                0,
+                $e
             );
         }
-
-        $data = $response->json('data');
-
-        if (!is_array($data)) {
-            throw new EmbeddingException(
-                'Mistral embedding API returned unexpected response format'
-            );
-        }
-
-        // Sort by index to ensure input order is preserved regardless of API response ordering
-        usort($data, fn ($a, $b) => $a['index'] <=> $b['index']);
-
-        return array_map(fn ($item) => $item['embedding'], $data);
     }
 }

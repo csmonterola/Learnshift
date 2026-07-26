@@ -6,26 +6,27 @@ use App\Exceptions\EmbeddingException;
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
 use App\Models\LessonChatLog;
+use App\Models\MaterialImage;
+use App\Services\Ai\AiProviderFactory;
 use App\Services\Rag\EmbeddingService;
 use App\Services\Rag\LessonRetriever;
 use App\Services\Rag\RagPromptBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class LessonChatController extends Controller
 {
     public function __construct(
         private readonly EmbeddingService $embeddingService,
-        private readonly LessonRetriever  $retriever,
+        private readonly LessonRetriever $retriever,
         private readonly RagPromptBuilder $promptBuilder,
     ) {}
 
     public function ask(Request $request, Lesson $lesson): JsonResponse
     {
         $validated = $request->validate([
-            'question'     => 'required|string|max:2000',
+            'question' => 'required|string|max:2000',
             'material_ids' => 'sometimes|array|max:50',
             'material_ids.*' => 'integer',
         ]);
@@ -37,14 +38,14 @@ class LessonChatController extends Controller
             ->where('users.id', $student->id)
             ->exists();
 
-        if (!$isEnrolled) {
+        if (! $isEnrolled) {
             return response()->json(
                 ['error' => 'You are not enrolled in the class for this lesson.'],
                 403
             );
         }
 
-        $question    = $validated['question'];
+        $question = $validated['question'];
         $materialIds = $validated['material_ids'] ?? [];
 
         // Embed the question; return 502 if the embedding service fails
@@ -53,8 +54,9 @@ class LessonChatController extends Controller
         } catch (EmbeddingException $e) {
             Log::error('LessonChat embedding failed', [
                 'lesson_id' => $lesson->id,
-                'error'     => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
+
             return response()->json(
                 ['error' => 'AI service temporarily unavailable. Please try again.'],
                 502
@@ -62,18 +64,66 @@ class LessonChatController extends Controller
         }
 
         // Retrieve relevant chunks, optionally filtered to specific material IDs
-        $chunks     = $this->retriever->retrieve($lesson->id, $queryVector, 5, $materialIds);
+        $chunks = $this->retriever->retrieve($lesson->id, $queryVector, 5, $materialIds);
         $chunkCount = $chunks->count();
+
+        // Extract image metadata from image-type chunks for the frontend.
+        $imageData = $this->extractImageData($chunks);
+
+        // Fetch all non-discarded images for this material.
+        $allImages = MaterialImage::whereHas('learningMaterial', function ($q) use ($lesson, $materialIds) {
+            $q->where('lesson_id', $lesson->id);
+            if (!empty($materialIds)) {
+                $q->whereIn('id', $materialIds);
+            }
+        })
+            ->whereIn('extraction_status', ['extracted', 'captioning'])
+            ->orderBy('page_number')
+            ->orderBy('id')
+            ->get();
+
+        $totalImageCount = $allImages->count();
+
+        // Only include images that have been captioned by the AI vision pipeline.
+        // Uncaptioned images have contentless IDs that cause the model to hallucinate
+        // descriptions from nearby text instead of seeing the actual image.
+        $allImages = $allImages->filter(fn ($img) => $img->caption !== null);
+
+        // Merge captioned images into the frontend response (deduplicating by ID)
+        // so the InlineImageRenderer can resolve [Image: ID] markers.
+        $seenIds = [];
+        foreach ($imageData as $d) {
+            $seenIds[$d['id']] = true;
+        }
+        foreach ($allImages as $img) {
+            if (isset($seenIds[$img->id]) || !$img->url) {
+                continue;
+            }
+            $imageData[] = [
+                'id' => $img->id,
+                'url' => $img->url,
+                'caption' => $img->caption,
+                'page_number' => $img->page_number,
+            ];
+        }
+
+        // Determine images argument for the prompt builder:
+        // - null    → no images in this material at all
+        // - empty   → images exist but none captioned yet
+        // - non-empty → captioned images available
+        $promptImages = $totalImageCount > 0 && $allImages->isEmpty()
+            ? collect()     // empty collection signals "exists but uncaptioned"
+            : ($allImages->isNotEmpty() ? $allImages : null);
 
         // Three-tier source and confidence logic
         if ($chunkCount >= 2) {
-            $source          = 'lesson_materials';
+            $source = 'lesson_materials';
             $confidenceScore = 90;
         } elseif ($chunkCount === 1) {
-            $source          = 'mixed';
+            $source = 'mixed';
             $confidenceScore = 80;
         } else {
-            $source          = 'general';
+            $source = 'general';
             $confidenceScore = 70;
         }
 
@@ -84,77 +134,94 @@ class LessonChatController extends Controller
             ->take(5)
             ->get();
 
-        // Build the Mistral messages array
-        $messages = $this->promptBuilder->build($chunks, $history, $question, $source);
+        // Build the Mistral messages array.
+        // $promptImages provides captions for the system prompt's "Visual Resources Available" section.
+        // Only top-5 semantically relevant images get actual image_url data sent to the vision model.
+        $messages = $this->promptBuilder->build($chunks, $history, $question, $source, $promptImages);
 
-        // Call Mistral AI chat completions
-        $apiKey = config('services.mistral.api_key');
-        $model  = config('services.mistral.model', 'mistral-small-latest');
-
+        // Call AI provider
         try {
-            $mistralResponse = Http::withHeaders([
-                'Authorization' => "Bearer {$apiKey}",
-                'Content-Type'  => 'application/json',
-            ])->timeout(30)
-              ->withoutVerifying()
-              ->post('https://api.mistral.ai/v1/chat/completions', [
-                'model'       => $model,
-                'messages'    => $messages,
-                'max_tokens'  => 600,
+            $provider = AiProviderFactory::make('chat');
+            $result = $provider->chat($messages, [
+                'max_tokens' => 600,
                 'temperature' => 0.7,
             ]);
-
-            if ($mistralResponse->failed()) {
-                Log::error('LessonChat Mistral API error', [
-                    'status'    => $mistralResponse->status(),
-                    'lesson_id' => $lesson->id,
-                ]);
-                return response()->json(
-                    ['error' => 'AI service temporarily unavailable. Please try again.'],
-                    502
-                );
-            }
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('LessonChat Mistral connection timeout', [
+            $responseText = $result['content'];
+        } catch (\RuntimeException $e) {
+            Log::error('LessonChat AI provider error', [
                 'lesson_id' => $lesson->id,
-                'error'     => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
+
             return response()->json(
                 ['error' => 'AI service temporarily unavailable. Please try again.'],
                 502
             );
         }
 
-        $responseText = $mistralResponse->json('choices.0.message.content')
-            ?? 'Sorry, I could not generate a response. Please try again.';
-
         // Persist the chat log; log silently on failure and continue
         $logId = null;
         try {
-            $log   = LessonChatLog::create([
-                'student_id'            => $student->id,
-                'lesson_id'             => $lesson->id,
-                'question'              => $question,
-                'response'              => $responseText,
-                'source'                => $source,
+            $log = LessonChatLog::create([
+                'student_id' => $student->id,
+                'lesson_id' => $lesson->id,
+                'question' => $question,
+                'response' => $responseText,
+                'source' => $source,
                 'retrieved_chunk_count' => $chunkCount,
-                'confidence_score'      => $confidenceScore,
+                'confidence_score' => $confidenceScore,
             ]);
             $logId = $log->id;
         } catch (\Throwable $e) {
             Log::warning('LessonChat failed to persist chat log', [
-                'lesson_id'  => $lesson->id,
+                'lesson_id' => $lesson->id,
                 'student_id' => $student->id,
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
 
         return response()->json([
-            'response'  => $responseText,
-            'source'    => $source,
-            'log_id'    => $logId,
+            'response' => $responseText,
+            'source' => $source,
+            'log_id' => $logId,
             'lesson_id' => $lesson->id,
+            'images' => $imageData,
         ]);
+    }
+
+    /**
+     * Extract image metadata from retrieved chunks for the frontend.
+     *
+     * @param  \Illuminate\Support\Collection  $chunks  Retrieved lesson embedding rows
+     * @return array<int, array{id: int, url: string, caption: string, page_number: int|null}>
+     */
+    private function extractImageData(\Illuminate\Support\Collection $chunks): array
+    {
+        $imageChunks = $chunks->filter(
+            fn ($chunk) => ($chunk->content_type ?? 'text') === 'image' && !empty($chunk->material_image_id)
+        );
+
+        if ($imageChunks->isEmpty()) {
+            return [];
+        }
+
+        $imageIds = $imageChunks->pluck('material_image_id')->unique()->values()->toArray();
+        $images = MaterialImage::whereIn('id', $imageIds)->get()->keyBy('id');
+
+        $data = [];
+        foreach ($imageChunks as $chunk) {
+            $image = $images->get($chunk->material_image_id);
+            if ($image && $image->url) {
+                $data[] = [
+                    'id' => $image->id,
+                    'url' => $image->url,
+                    'caption' => $chunk->chunk_text,
+                    'page_number' => $chunk->page_number,
+                ];
+            }
+        }
+
+        return $data;
     }
 
     /**
@@ -169,7 +236,7 @@ class LessonChatController extends Controller
             ->where('users.id', $student->id)
             ->exists();
 
-        if (!$isEnrolled) {
+        if (! $isEnrolled) {
             return response()->json(['error' => 'You are not enrolled in the class for this lesson.'], 403);
         }
 

@@ -11,7 +11,13 @@ import {
   Hexagon,
   MessageCircle,
   FolderOpen,
+  X,
 } from 'lucide-react'
+
+interface TeacherSidebarProps {
+  isOpen?: boolean
+  onClose?: () => void
+}
 
 const navItems = [
   { path: '/teacher',           icon: LayoutDashboard, label: 'Dashboard' },
@@ -23,7 +29,7 @@ const navItems = [
   { path: '/teacher/settings',  icon: Settings,        label: 'Settings' },
 ]
 
-export function TeacherSidebar() {
+export function TeacherSidebar({ isOpen = true, onClose }: TeacherSidebarProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
@@ -33,7 +39,16 @@ export function TeacherSidebar() {
   }
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 h-screen flex flex-col fixed left-0 top-0 z-20">
+    <aside className={`
+      w-64 bg-white border-r border-slate-200 h-screen flex flex-col
+      fixed inset-y-0 left-0 z-30 transform transition-transform duration-300 ease-in-out
+      lg:translate-x-0 lg:z-20
+      ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+    `}>
+      {/* Mobile close button */}
+      <button onClick={() => onClose?.()} className="absolute top-5 right-4 p-1 text-gray-400 hover:text-gray-600 lg:hidden">
+        <X className="w-5 h-5" />
+      </button>
       {/* Logo */}
       <div className="p-6 flex items-center gap-3">
         <div className="w-8 h-8 bg-emerald-400 rounded-lg flex items-center justify-center text-white">

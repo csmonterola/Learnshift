@@ -14,7 +14,6 @@ class LearningMaterialObserver
     public function created(LearningMaterial $material): void
     {
         if ($material->ai_sync && $material->lesson_id !== null) {
-            $material->update(['ingestion_status' => 'pending']);
             IngestLearningMaterialJob::dispatch($material->id);
         }
     }
@@ -36,6 +35,9 @@ class LearningMaterialObserver
             && $material->getOriginal('ai_sync') === true;
 
         if ($aiSyncChangedToTrue || $filePathChangedWithSync) {
+            if ($material->getOriginal('ingestion_status') === 'indexed') {
+                return;
+            }
             $material->update(['ingestion_status' => 'pending']);
             IngestLearningMaterialJob::dispatch($material->id);
             return;

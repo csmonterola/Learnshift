@@ -3,16 +3,16 @@
 namespace App\Services\Quiz;
 
 use App\Models\Lesson;
+use App\Services\Ai\AiProviderFactory;
 use App\Services\Rag\EmbeddingService;
 use App\Services\Rag\LessonRetriever;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class QuestionGenerator
 {
     public function __construct(
-        private readonly EmbeddingService  $embeddingService,
-        private readonly LessonRetriever   $retriever,
+        private readonly EmbeddingService $embeddingService,
+        private readonly LessonRetriever $retriever,
         private readonly QuizPromptBuilder $promptBuilder,
     ) {}
 
@@ -23,18 +23,18 @@ class QuestionGenerator
      * Mistral AI to generate questions based on that content.
      *
      * @param  Lesson  $lesson  The lesson to generate questions for
-     * @param  string  $mode    'practice' or 'quiz'
-     * @param  int     $count   Number of questions (default 5)
-     * @return array   ['questions' => [...], 'source' => string]
+     * @param  string  $mode  'practice' or 'quiz'
+     * @param  int  $count  Number of questions (default 5)
+     * @return array ['questions' => [...], 'source' => string]
      *
-     * @throws \RuntimeException  On AI service failure
+     * @throws \RuntimeException On AI service failure
      */
     public function generate(Lesson $lesson, string $mode = 'practice', int $count = 5): array
     {
         // Step 1: Embed the lesson title + content as the query vector
         $queryText = $lesson->title;
         if ($lesson->content) {
-            $queryText .= ' ' . substr($lesson->content, 0, 500);
+            $queryText .= ' '.substr($lesson->content, 0, 500);
         }
 
         try {
@@ -42,7 +42,7 @@ class QuestionGenerator
         } catch (\Throwable $e) {
             Log::warning('QuestionGenerator embedding failed, proceeding without RAG context', [
                 'lesson_id' => $lesson->id,
-                'error'     => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
             $queryVector = null;
         }
@@ -63,47 +63,28 @@ class QuestionGenerator
         // Step 3: Build the prompt
         $messages = $this->promptBuilder->build($chunks, $lesson->title, $mode, $count);
 
-        // Step 4: Call Mistral AI
-        $apiKey = config('services.mistral.api_key');
-        $model  = config('services.mistral.model', 'mistral-small-latest');
-
+        // Step 4: Call AI provider
         try {
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$apiKey}",
-                'Content'       => 'application/json',
-            ])->timeout(60)
-              ->withoutVerifying()
-              ->post('https://api.mistral.ai/v1/chat/completions', [
-                  'model'       => $model,
-                  'messages'    => $messages,
-                  'max_tokens'  => 2000,
-                  'temperature' => 0.7,
-              ]);
-
-            if ($response->failed()) {
-                Log::error('QuestionGenerator Mistral API error', [
-                    'status'    => $response->status(),
-                    'lesson_id' => $lesson->id,
-                ]);
-                throw new \RuntimeException('AI service temporarily unavailable. Please try again.');
-            }
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('QuestionGenerator Mistral connection timeout', [
+            $provider = AiProviderFactory::make('chat');
+            $result = $provider->chat($messages, [
+                'max_tokens' => 2000,
+                'temperature' => 0.7,
+            ]);
+            $responseText = $result['content'];
+        } catch (\RuntimeException $e) {
+            Log::error('QuestionGenerator AI provider error', [
                 'lesson_id' => $lesson->id,
-                'error'     => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
             throw new \RuntimeException('AI service temporarily unavailable. Please try again.');
         }
-
-        $responseText = $response->json('choices.0.message.content')
-            ?? throw new \RuntimeException('AI service returned an empty response.');
 
         // Step 5: Parse the JSON response
         $questions = $this->parseResponse($responseText, $lesson->id);
 
         return [
             'questions' => $questions,
-            'source'    => $source,
+            'source' => $source,
         ];
     }
 
@@ -120,20 +101,41 @@ class QuestionGenerator
         $cleaned = trim($cleaned);
 
         // Try to extract JSON array if there's surrounding text
-        if (str_starts_with($cleaned, '[') === false) {
-            $start = strpos($cleaned, '[');
-            $end   = strrpos($cleaned, ']');
-            if ($start !== false && $end !== false && $end > $start) {
-                $cleaned = substr($cleaned, $start, $end - $start + 1);
+        if (!str_starts_with($cleaned, '[')) {
+            // Check for bare object {...} and wrap it in an array
+            if (str_starts_with($cleaned, '{')) {
+                $start = strpos($cleaned, '{');
+                $end = strrpos($cleaned, '}');
+                if ($start !== false && $end !== false && $end > $start) {
+                    $cleaned = '[' . substr($cleaned, $start, $end - $start + 1) . ']';
+                    Log::info('QuestionGenerator parseResponse wrapped bare object in array', [
+                        'lesson_id' => $lessonId,
+                    ]);
+                }
+            } else {
+                $start = strpos($cleaned, '[');
+                $end = strrpos($cleaned, ']');
+                if ($start !== false && $end !== false && $end > $start) {
+                    $cleaned = substr($cleaned, $start, $end - $start + 1);
+                }
             }
+        }
+
+        // Strip trailing commas before decoding (common AI output issue)
+        $before = $cleaned;
+        $cleaned = preg_replace('/,\s*([\]}])/', '$1', $cleaned);
+        if ($cleaned !== $before) {
+            Log::info('QuestionGenerator parseResponse stripped trailing commas', [
+                'lesson_id' => $lessonId,
+            ]);
         }
 
         $decoded = json_decode($cleaned, true);
 
-        if (!is_array($decoded) || empty($decoded)) {
+        if (! is_array($decoded) || empty($decoded)) {
             Log::error('QuestionGenerator failed to parse AI response', [
                 'lesson_id' => $lessonId,
-                'response'  => substr($responseText, 0, 500),
+                'response' => substr($responseText, 0, 500),
             ]);
             throw new \RuntimeException('Failed to generate questions. Please try again.');
         }
@@ -141,7 +143,7 @@ class QuestionGenerator
         // Validate and normalize each question
         $questions = [];
         foreach ($decoded as $i => $q) {
-            if (!isset($q['question'], $q['options'], $q['correct_index'])) {
+            if (! isset($q['question'], $q['options'], $q['correct_index'])) {
                 continue; // Skip malformed questions
             }
 
@@ -156,12 +158,14 @@ class QuestionGenerator
             $options = array_slice($options, 0, 4);
 
             $questions[] = [
-                'index'         => $i,
-                'question'      => trim($q['question']),
-                'options'       => $options,
+                'index' => $i,
+                'question' => trim($q['question']),
+                'options' => $options,
                 'correct_index' => (int) $q['correct_index'],
-                'explanation'   => trim($q['explanation'] ?? ''),
-                'difficulty'    => $q['difficulty'] ?? 'medium',
+                'explanation' => trim($q['explanation'] ?? ''),
+                'difficulty' => $q['difficulty'] ?? 'medium',
+                'image_url' => $q['image_url'] ?? null,
+                'option_image_urls' => $q['option_image_urls'] ?? null,
             ];
         }
 

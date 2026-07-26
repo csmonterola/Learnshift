@@ -10,6 +10,8 @@ interface GeneratedQuestion {
   correct_index: number
   explanation: string
   difficulty: string
+  image_url?: string | null
+  option_image_urls?: (string | null)[] | null
 }
 
 interface QuizAttempt {
@@ -307,6 +309,11 @@ export default function QuizPanel({ lessonId, lessonTitle }: QuizPanelProps) {
         </div>
       </div>
 
+      {q.image_url && (
+        <div className="mb-4 rounded-2xl overflow-hidden border border-gray-200">
+          <img src={q.image_url} alt="Question illustration" className="w-full max-h-64 object-contain bg-gray-50" />
+        </div>
+      )}
       <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 mb-4">
         <p className="font-bold text-gray-900 text-base leading-snug">{q.question}</p>
       </div>
@@ -323,6 +330,9 @@ export default function QuizPanel({ lessonId, lessonTitle }: QuizPanelProps) {
                 <span className="w-6 h-6 rounded-full border border-current flex items-center justify-center text-xs font-bold shrink-0">
                   {['A','B','C','D'][i]}
                 </span>
+                {q.option_image_urls?.[i] && (
+                  <img src={q.option_image_urls[i]!} alt="" className="w-8 h-8 rounded object-cover border border-gray-200 shrink-0" />
+                )}
                 {opt}
               </span>
             </button>

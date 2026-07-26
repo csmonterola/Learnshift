@@ -9,6 +9,7 @@ import {
   SettingsIcon,
   LogOutIcon,
   MoreVerticalIcon,
+  X,
 } from 'lucide-react'
 
 const navItems = [
@@ -24,7 +25,12 @@ interface ChildSummary {
   studentProfile?: { grade_level?: string }
 }
 
-export function ParentSidebar() {
+interface ParentSidebarProps {
+  isOpen?: boolean
+  onClose?: () => void
+}
+
+export function ParentSidebar({ isOpen = true, onClose }: ParentSidebarProps) {
   const location = useLocation()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -44,7 +50,16 @@ export function ParentSidebar() {
   const firstChild = children[0]
 
   return (
-    <div className="w-60 bg-white h-screen flex flex-col border-r border-gray-200 fixed left-0 top-0 z-20">
+    <div className={`
+      w-60 bg-white h-screen flex flex-col border-r border-gray-200
+      fixed inset-y-0 left-0 z-30 transform transition-transform duration-300 ease-in-out
+      lg:translate-x-0 lg:z-20
+      ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+    `}>
+      {/* Mobile close button */}
+      <button onClick={() => onClose?.()} className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 lg:hidden">
+        <X className="w-5 h-5" />
+      </button>
       {/* Logo */}
       <div className="p-6 flex items-center gap-3">
         <div className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center">

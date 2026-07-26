@@ -40,6 +40,11 @@ class LearningMaterial extends Model
         return $this->belongsTo(Lesson::class, 'lesson_id');
     }
 
+    public function images()
+    {
+        return $this->hasMany(MaterialImage::class, 'learning_material_id');
+    }
+
     /**
      * Generate consistent file URL with proper error handling.
      *

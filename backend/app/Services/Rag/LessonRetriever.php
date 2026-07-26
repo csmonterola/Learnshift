@@ -19,7 +19,7 @@ class LessonRetriever
      * @param  int    $topK         Maximum number of chunks to return (default 5)
      * @param  int[]  $materialIds  Optional: restrict retrieval to these material IDs;
      *                              foreign-lesson IDs are silently ignored by the lesson_id clause
-     * @return Collection           Collection of objects with id, lesson_id, material_id, chunk_index, chunk_text, score
+     * @return Collection           Collection of objects with id, lesson_id, material_id, chunk_index, page_number, chunk_text, score
      */
     public function retrieve(
         int   $lessonId,
@@ -40,7 +40,8 @@ class LessonRetriever
         }
 
         $rows = DB::select(
-            "SELECT id, lesson_id, material_id, chunk_index, chunk_text,
+            "SELECT id, lesson_id, material_id, chunk_index, page_number,
+                    content_type, material_image_id, chunk_text,
                     1 - (embedding <=> ?) AS score
              FROM lesson_embeddings
              WHERE lesson_id = ?

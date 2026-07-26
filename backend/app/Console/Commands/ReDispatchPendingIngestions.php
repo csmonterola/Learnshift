@@ -30,7 +30,7 @@ class ReDispatchPendingIngestions extends Command
             IngestLearningMaterialJob::dispatch($material->id);
         }
 
-        $this->info('Done. Run "php artisan queue:work" to process the jobs.');
+        $this->info('Done. Run "php artisan queue:work --queue=default,captions" to process the jobs.');
 
         return self::SUCCESS;
     }

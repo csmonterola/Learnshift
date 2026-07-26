@@ -7,6 +7,7 @@ use App\Models\Lesson;
 use App\Services\Quiz\QuestionGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class LessonPracticeController extends Controller
 {
@@ -41,7 +42,29 @@ class LessonPracticeController extends Controller
                 'source'    => $result['source'],
             ]);
         } catch (\RuntimeException $e) {
-            return response()->json(['error' => $e->getMessage()], 502);
+            Log::warning('Practice question generation failed, returning mock fallback', [
+                'lesson_id' => $lesson->id,
+                'error'     => $e->getMessage(),
+            ]);
+
+            $mockQuestions = [];
+            for ($i = 0; $i < 5; $i++) {
+                $mockQuestions[] = [
+                    'index'            => $i,
+                    'question'         => "Practice question for {$lesson->title}?",
+                    'options'          => ['Option A', 'Option B', 'Option C', 'Option D'],
+                    'correct_index'    => 0,
+                    'explanation'      => 'AI-generated questions are temporarily unavailable. Please try again later.',
+                    'difficulty'       => 'medium',
+                    'image_url'        => null,
+                    'option_image_urls' => null,
+                ];
+            }
+
+            return response()->json([
+                'questions' => $mockQuestions,
+                'source'    => 'fallback',
+            ]);
         }
     }
 

@@ -126,6 +126,8 @@ export function StudentLessonView() {
   const [viewing, setViewing]       = useState<Material | null>(null)
   const [activeTab, setActiveTab]   = useState<ActiveTab>('chat')
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<number>>(new Set())
+  const [showSources, setShowSources] = useState(false)
+  const [showInfo, setShowInfo]       = useState(false)
 
   // Track materials with ingestion_status from SourcePanel
   const [materialsWithStatus, setMaterialsWithStatus] = useState<Material[]>([])
@@ -179,7 +181,8 @@ export function StudentLessonView() {
       </AnimatePresence>
 
       {/* Full-height 3-column layout */}
-      <div className="flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] -mx-4 sm:-mx-6 lg:-mx-8 -my-4 sm:-my-6">
+      <div className="flex flex-col h-screen max-h-screen -mx-4 sm:-mx-6 lg:-mx-8 -mb-4 sm:-mb-6 lg:-mb-8"
+        style={{ marginTop: '-1rem' }}>
 
         {/* Top bar */}
         <div className="flex items-center gap-2 px-6 py-3 border-b border-gray-200 bg-white shrink-0">
@@ -193,10 +196,37 @@ export function StudentLessonView() {
         </div>
 
         {/* 3-column body */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden relative">
+
+          {/* Mobile panel toggle buttons */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 lg:hidden">
+            <button onClick={() => { setShowSources(!showSources); setShowInfo(false) }}
+              className={`px-4 py-2 rounded-full text-xs font-bold shadow-lg transition-all ${
+                showSources ? 'bg-emerald-500 text-white' : 'bg-white text-gray-700 border border-gray-200'
+              }`}>
+              Sources
+            </button>
+            <button onClick={() => { setShowInfo(!showInfo); setShowSources(false) }}
+              className={`px-4 py-2 rounded-full text-xs font-bold shadow-lg transition-all ${
+                showInfo ? 'bg-emerald-500 text-white' : 'bg-white text-gray-700 border border-gray-200'
+              }`}>
+              Info
+            </button>
+          </div>
+
+          {/* Sources backdrop */}
+          {(showSources || showInfo) && (
+            <div className="fixed inset-0 bg-black/40 z-10 lg:hidden" onClick={() => { setShowSources(false); setShowInfo(false) }} />
+          )}
 
           {/* ── LEFT: Sources / Materials with preview + RAG selection ── */}
-          <div className="w-64 shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col overflow-hidden">
+          <div className={`
+            lg:w-64 lg:shrink-0 lg:relative lg:border-r lg:bg-gray-50
+            fixed inset-y-0 left-0 z-20 w-72 bg-gray-50 border-r border-gray-200
+            transform transition-transform duration-300 ease-in-out
+            lg:transform-none lg:flex lg:flex-col lg:overflow-hidden
+            ${showSources ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          `}>
             <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-sm font-bold text-gray-700">Sources</h2>
               <Paperclip className="w-4 h-4 text-gray-400" />
@@ -312,7 +342,13 @@ export function StudentLessonView() {
           </div>
 
           {/* ── RIGHT: Lesson info / Notes ────────────────────── */}
-          <div className="w-72 shrink-0 border-l border-gray-200 bg-gray-50 flex flex-col overflow-hidden">
+          <div className={`
+            lg:w-72 lg:shrink-0 lg:relative lg:border-l lg:bg-gray-50
+            fixed inset-y-0 right-0 z-20 w-72 bg-gray-50 border-l border-gray-200
+            transform transition-transform duration-300 ease-in-out
+            lg:transform-none lg:flex lg:flex-col lg:overflow-hidden
+            ${showInfo ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+          `}>
             <div className="px-4 py-3 border-b border-gray-200">
               <h2 className="text-sm font-bold text-gray-700">Lesson Info</h2>
             </div>

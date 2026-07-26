@@ -75,6 +75,36 @@ Learnshift is an AI-powered personalized learning platform for students, teacher
 - The local frontend should run on port 5173.
 - The local backend API should run on port 8000.
 
+### 3.2.1 Fresh Clone Setup Commands
+For a new clone, run the following commands from the project root:
+
+```bash
+# Install frontend dependencies
+npm install
+
+# Install backend dependencies
+cd backend
+composer install
+php -r "file_exists('.env') || copy('.env.example', '.env');"
+php artisan key:generate
+
+
+# Start the frontend (from the project root in a new terminal)
+npm run dev
+
+# Start the backend (from the backend folder in another terminal)
+php artisan serve --port=8000
+```
+
+Important notes for a different PC:
+- Install Node.js 18+, npm, PHP 8.2+, Composer, and the PHP SQLite extension.
+- If the backend throws database or PDO errors, ensure SQLite support is enabled in PHP.
+- If you use PowerShell, the command above still works because it does not depend on shell-specific syntax.
+
+Expected local URLs:
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000/api
+
 ### 3.3 Security Requirements
 - All passwords must be securely hashed.
 - Authentication must use secure session/token handling.

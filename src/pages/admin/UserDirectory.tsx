@@ -327,26 +327,26 @@ export function AdminUserDirectory() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/50 border-b border-gray-100">
-                  <th className="py-4 px-6 w-12">
-                    <div className="w-4 h-4 rounded border-2 border-gray-300" />
-                  </th>
-                  <th className="py-4 px-6 text-xs font-bold text-gray-400 tracking-wider">NAME</th>
-                  <th className="py-4 px-6 text-xs font-bold text-gray-400 tracking-wider">EMAIL</th>
-                  <th className="py-4 px-6 text-xs font-bold text-gray-400 tracking-wider">ROLE</th>
-                  <th className="py-4 px-6 text-xs font-bold text-gray-400 tracking-wider">STATUS</th>
-                  <th className="py-4 px-6 text-xs font-bold text-gray-400 tracking-wider">ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {users.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-4 px-6">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 border-b border-gray-100">
+                    <th className="hidden sm:table-cell py-4 px-6 w-12">
                       <div className="w-4 h-4 rounded border-2 border-gray-300" />
-                    </td>
-                    <td className="py-4 px-6">
+                    </th>
+                    <th className="py-4 px-4 sm:px-6 text-xs font-bold text-gray-400 tracking-wider">NAME</th>
+                    <th className="hidden md:table-cell py-4 px-4 sm:px-6 text-xs font-bold text-gray-400 tracking-wider">EMAIL</th>
+                    <th className="py-4 px-4 sm:px-6 text-xs font-bold text-gray-400 tracking-wider">ROLE</th>
+                    <th className="py-4 px-4 sm:px-6 text-xs font-bold text-gray-400 tracking-wider">STATUS</th>
+                    <th className="py-4 px-4 sm:px-6 text-xs font-bold text-gray-400 tracking-wider">ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {users.map((u) => (
+                    <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="hidden sm:table-cell py-4 px-6">
+                        <div className="w-4 h-4 rounded border-2 border-gray-300" />
+                      </td>
+                      <td className="py-4 px-4 sm:px-6">
                       <div className="flex items-center gap-3">
                         <div className={`w-8 h-8 rounded-lg ${getAvatarColor(u.role)} text-white flex items-center justify-center text-xs font-bold flex-shrink-0`}>
                           {getInitials(u.name)}
@@ -361,42 +361,45 @@ export function AdminUserDirectory() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-4 px-6">
-                      <span className="text-sm text-gray-500">{u.email}</span>
+                    <td className="hidden md:table-cell py-4 px-4 sm:px-6">
+                      <span className="text-sm text-gray-500 truncate max-w-[200px] block">{u.email}</span>
                     </td>
-                    <td className="py-4 px-6">
+                    <td className="py-4 px-4 sm:px-6">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${getRoleBadgeColor(u.role)}`}>
                         {u.role}
                       </span>
                     </td>
-                    <td className="py-4 px-6">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                    <td className="py-4 px-4 sm:px-6">
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium border ${
                         u.is_active
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           : 'bg-gray-100 text-gray-600 border-gray-200'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-emerald-500' : 'bg-gray-400'}`} />
-                        {u.is_active ? 'Active' : 'Inactive'}
+                        <span className="hidden sm:inline">{u.is_active ? 'Active' : 'Inactive'}</span>
                       </span>
                     </td>
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-2">
+                    <td className="py-4 px-4 sm:px-6">
+                      <div className="flex items-center gap-1 sm:gap-2">
                         <button
                           onClick={() => openEditModal(u)}
                           className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors border border-gray-200 bg-white"
+                          title="Edit"
                         >
                           <MoreHorizontal className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleResetPassword(u.id)}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                          className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                          title="Reset Password"
                         >
                           <Key className="w-3.5 h-3.5" />
-                          Reset Password
+                          <span className="hidden sm:inline">Reset</span>
                         </button>
                         <button
                           onClick={() => handleDelete(u.id)}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                          className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                          title="Delete"
                         >
                           Delete
                         </button>
@@ -436,7 +439,7 @@ export function AdminUserDirectory() {
       {/* Create/Edit Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-gray-900">
                 {editingUser ? 'Edit User' : 'Create New Account'}

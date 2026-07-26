@@ -2,6 +2,7 @@
 
 namespace App\Services\Quiz;
 
+use App\Models\MaterialImage;
 use Illuminate\Support\Collection;
 
 class QuizPromptBuilder
@@ -9,7 +10,12 @@ class QuizPromptBuilder
     /**
      * Build the Mistral messages array for question generation.
      *
-     * @param  Collection  $chunks    Retrieved lesson embedding chunks
+     * Retrieved chunks may include both text rows (content_type='text') and
+     * image rows (content_type='image' with material_image_id set).
+     * Image rows are injected into the final user message as content-array parts
+     * so Mistral can see the image directly (multimodal).
+     *
+     * @param  Collection  $chunks    Retrieved lesson embedding rows
      * @param  string      $lessonTitle  Title of the lesson
      * @param  string      $mode      'practice' or 'quiz'
      * @param  int         $count     Number of questions to generate (default 5)
@@ -21,14 +27,36 @@ class QuizPromptBuilder
         string     $mode = 'practice',
         int        $count = 5,
     ): array {
-        $context = $chunks->map(fn ($chunk) => $chunk->chunk_text)->implode("\n\n---\n\n");
-
         $systemPrompt = $this->buildSystemPrompt($mode, $count);
-        $userPrompt   = $this->buildUserPrompt($lessonTitle, $context, $mode, $count);
+        $imageParts = $this->buildImageContentParts($chunks);
+
+        if (empty($imageParts)) {
+            // No images — plain text user message
+            $textChunks = $chunks->filter(
+                fn ($chunk) => ($chunk->content_type ?? 'text') === 'text'
+            );
+            $context = $textChunks->map(fn ($chunk) => $chunk->chunk_text)->implode("\n\n---\n\n");
+            $userPrompt = $this->buildTextUserPrompt($lessonTitle, $context, $mode, $count);
+
+            return [
+                ['role' => 'system', 'content' => $systemPrompt],
+                ['role' => 'user',   'content' => $userPrompt],
+            ];
+        }
+
+        // Images present — build user message with text context + image parts
+        $textChunks = $chunks->filter(
+            fn ($chunk) => ($chunk->content_type ?? 'text') === 'text'
+        );
+        $context = $textChunks->map(fn ($chunk) => $chunk->chunk_text)->implode("\n\n---\n\n");
+        $userContentParts = array_merge(
+            [['type' => 'text', 'text' => $this->buildImageUserPrompt($lessonTitle, $context, $mode, $count)]],
+            $imageParts
+        );
 
         return [
             ['role' => 'system', 'content' => $systemPrompt],
-            ['role' => 'user',   'content' => $userPrompt],
+            ['role' => 'user',   'content' => $userContentParts],
         ];
     }
 
@@ -44,7 +72,15 @@ class QuizPromptBuilder
               . "4. Questions should be clear, concise, and grade-appropriate.\n"
               . "5. Include a brief explanation for the correct answer.\n"
               . "6. Vary difficulty levels across questions.\n"
-              . "7. You MUST respond with ONLY a valid JSON array — no markdown, no code fences, no extra text.\n";
+              . "7. You MUST respond with ONLY a valid JSON array — no markdown, no code fences, no extra text.\n"
+              . "8. Each question object may include two optional fields:\n"
+              . '   "image_url": string|null — a URL to an image relevant to the question stem (only if provided in the lesson materials).' . "\n"
+              . '   "option_image_urls": array of string|null — one per option, if an image is relevant to a specific choice.' . "\n"
+               . "   ONLY populate these with a URL that was actually provided in the given lesson materials. "
+               . "Never invent or guess a URL. When an image genuinely helps answer the question — "
+               . "for example, identifying a labeled diagram, interpreting a chart, or comparing "
+               . "visual elements — include its URL in image_url or option_image_urls. "
+               . "Omit images when the question is purely textual or conceptual.\n";
 
         if ($mode === 'practice') {
             $base .= "\nMODE: PRACTICE\n"
@@ -57,12 +93,12 @@ class QuizPromptBuilder
         }
 
         $base .= "\nRESPONSE FORMAT (JSON array only):\n"
-               . '[{"question":"...","options":["A) ...","B) ...","C) ...","D) ..."],"correct_index":0,"explanation":"...","difficulty":"easy|medium|hard"}]';
+               . '[{"question":"...","options":["A) ...","B) ...","C) ...","D) ..."],"correct_index":0,"explanation":"...","difficulty":"easy|medium|hard","image_url":null,"option_image_urls":[null,null,null,null]}]';
 
         return $base;
     }
 
-    private function buildUserPrompt(string $lessonTitle, string $context, string $mode, int $count): string
+    private function buildTextUserPrompt(string $lessonTitle, string $context, string $mode, int $count): string
     {
         $prompt = "Lesson: {$lessonTitle}\n\n";
 
@@ -77,5 +113,67 @@ class QuizPromptBuilder
         $prompt .= "\nReturn ONLY the JSON array. No additional text.";
 
         return $prompt;
+    }
+
+    private function buildImageUserPrompt(string $lessonTitle, string $context, string $mode, int $count): string
+    {
+        $prompt = "Lesson: {$lessonTitle}\n\n";
+
+        if (!empty($context)) {
+            $prompt .= "=== LESSON MATERIALS ===\n\n{$context}\n\n========================\n\n";
+        }
+
+        $prompt .= "Images from the lesson materials are provided below. "
+                 . "They include descriptive captions. "
+                 . "Refer to these images together with the lesson text above "
+                 . "to generate {$count} multiple-choice questions.\n";
+        $prompt .= "Where relevant, use the image_url and option_image_urls fields "
+                 . "to link questions/options to specific images.\n\n";
+        $prompt .= "Return ONLY the JSON array. No additional text.";
+
+        return $prompt;
+    }
+
+    /**
+     * Build content-array parts for image chunks.
+     *
+     * @return array<int, array{type: string, mixed}>
+     */
+    private function buildImageContentParts(Collection $chunks): array
+    {
+        $imageChunks = $chunks->filter(
+            fn ($chunk) => ($chunk->content_type ?? 'text') === 'image' && !empty($chunk->material_image_id)
+        );
+
+        if ($imageChunks->isEmpty()) {
+            return [];
+        }
+
+        $parts = [];
+
+        foreach ($imageChunks as $chunk) {
+            $caption = $chunk->chunk_text;
+            $page = $chunk->page_number;
+
+            $image = MaterialImage::find($chunk->material_image_id);
+            if (!$image || $image->caption === null) {
+                continue;
+            }
+            $url = $image->url;
+
+            $pageLabel = $page ? "page {$page}" : "unknown page";
+            $parts[] = [
+                'type' => 'text',
+                'text' => "[Image: {$chunk->material_image_id}] ({$pageLabel}): {$caption}",
+            ];
+            $parts[] = [
+                'type' => 'image_url',
+                'image_url' => [
+                    'url' => $url,
+                ],
+            ];
+        }
+
+        return $parts;
     }
 }
