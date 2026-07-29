@@ -242,10 +242,16 @@ class ContentController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        if ($material->file_type !== 'LINK') {
-            Storage::disk('public')->delete($material->file_path);
-        }
-        $material->delete();
+        DB::transaction(function () use ($material) {
+            if ($material->file_type !== 'LINK') {
+                Storage::disk('public')->delete($material->file_path);
+            }
+
+            // lesson_embeddings has a CASCADE DELETE FK on material_id,
+            // and material_images has a CASCADE DELETE FK on learning_material_id.
+            // The transaction ensures atomicity: if any step fails, nothing is deleted.
+            $material->delete();
+        });
 
         return response()->json(['message' => 'Material deleted.']);
     }

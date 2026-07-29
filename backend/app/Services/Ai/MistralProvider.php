@@ -26,55 +26,38 @@ class MistralProvider implements AiProviderInterface
             'temperature' => $options['temperature'] ?? 0.7,
         ];
 
-        $maxAttempts = 3;
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$apiKey}",
+                'Content-Type' => 'application/json',
+            ])->timeout(30)
+                ->withoutVerifying()
+                ->post(self::CHAT_URL, $payload);
 
-        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-            try {
-                $response = Http::withHeaders([
-                    'Authorization' => "Bearer {$apiKey}",
-                    'Content-Type' => 'application/json',
-                ])->timeout(30)
-                    ->withoutVerifying()
-                    ->post(self::CHAT_URL, $payload);
-
-                if ($response->failed()) {
-                    $status = $response->status();
-                    $body = $response->body();
-
-                    // Retry on 429 (rate limit) and 5xx (server errors)
-                    if ($attempt < $maxAttempts && ($status === 429 || $status >= 500)) {
-                        Log::warning('Mistral chat API transient error, retrying', [
-                            'attempt' => $attempt,
-                            'status' => $status,
-                        ]);
-                        sleep($attempt * 2);
-                        continue;
-                    }
-
-                    Log::error('Mistral chat API error', [
-                        'status' => $status,
-                        'body' => $body,
-                    ]);
-                    throw new \RuntimeException(
-                        'AI service temporarily unavailable. Please try again.'
-                    );
-                }
-            } catch (ConnectionException $e) {
+            if ($response->failed()) {
+                $status = $response->status();
+                $body = $response->body();
+                Log::error('Mistral chat API error', [
+                    'status' => $status,
+                    'body' => $body,
+                ]);
                 throw new \RuntimeException(
                     'AI service temporarily unavailable. Please try again.'
                 );
             }
-
-            $content = $response->json('choices.0.message.content')
-                ?? throw new \RuntimeException('AI service returned an empty response.');
-
-            return [
-                'content' => $content,
-                'raw' => $response->json(),
-            ];
+        } catch (ConnectionException $e) {
+            throw new \RuntimeException(
+                'AI service temporarily unavailable. Please try again.'
+            );
         }
 
-        throw new \RuntimeException('AI service temporarily unavailable. Please try again.');
+        $content = $response->json('choices.0.message.content')
+            ?? throw new \RuntimeException('AI service returned an empty response.');
+
+        return [
+            'content' => $content,
+            'raw' => $response->json(),
+        ];
     }
 
     public function embed(array $texts): array
@@ -91,30 +74,19 @@ class MistralProvider implements AiProviderInterface
 
         // Split batches into concurrent windows to cap concurrency
         foreach (array_chunk($batches, $concurrency) as $window) {
-            try {
-                $responses = Http::pool(fn (Pool $pool) => array_map(
-                    fn (array $batch) => $pool
-                        ->timeout(30)
-                        ->withToken(config('services.mistral.api_key'))
-                        ->withoutVerifying()
-                        ->post(self::EMBED_URL, [
-                            'model' => config('services.mistral.embedding_model', 'mistral-embed'),
-                            'input' => $batch,
-                        ]),
-                    $window
-                ));
+            $responses = Http::pool(fn (Pool $pool) => array_map(
+                fn (array $batch) => $pool
+                    ->timeout(30)
+                    ->withToken(config('services.mistral.api_key'))
+                    ->withoutVerifying()
+                    ->post(self::EMBED_URL, [
+                        'model' => config('services.mistral.embedding_model', 'mistral-embed'),
+                        'input' => $batch,
+                    ]),
+                $window
+            ));
 
-                $batchVectors = $this->collectPoolResponses($responses);
-                array_push($vectors, ...$batchVectors);
-            } catch (ConnectionException|EmbeddingException $e) {
-                Log::warning('Mistral embed pool failed, falling back to sequential', [
-                    'error' => $e->getMessage(),
-                ]);
-                foreach ($window as $batch) {
-                    $batchVectors = $this->sendEmbeddingRequest($batch);
-                    array_push($vectors, ...$batchVectors);
-                }
-            }
+            array_push($vectors, ...$this->collectPoolResponses($responses));
         }
 
         return $vectors;
@@ -122,36 +94,21 @@ class MistralProvider implements AiProviderInterface
 
     private function sendEmbeddingRequest(array $texts): array
     {
-        $maxAttempts = 2;
+        $response = Http::timeout(30)
+            ->withToken(config('services.mistral.api_key'))
+            ->withoutVerifying()
+            ->post(self::EMBED_URL, [
+                'model' => config('services.mistral.embedding_model', 'mistral-embed'),
+                'input' => $texts,
+            ]);
 
-        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-            $response = Http::timeout(30)
-                ->withToken(config('services.mistral.api_key'))
-                ->withoutVerifying()
-                ->post(self::EMBED_URL, [
-                    'model' => config('services.mistral.embedding_model', 'mistral-embed'),
-                    'input' => $texts,
-                ]);
-
-            if ($response->failed()) {
-                if ($attempt < $maxAttempts && ($response->status() === 429 || $response->status() >= 500)) {
-                    Log::warning('Mistral embed transient error, retrying', [
-                        'attempt' => $attempt,
-                        'status' => $response->status(),
-                    ]);
-                    sleep(2);
-                    continue;
-                }
-
-                throw new EmbeddingException(
-                    'Mistral embedding API error: HTTP '.$response->status()
-                );
-            }
-
-            return self::parseEmbeddingResponse($response->json());
+        if ($response->failed()) {
+            throw new EmbeddingException(
+                'Mistral embedding API error: HTTP '.$response->status()
+            );
         }
 
-        throw new EmbeddingException('Mistral embedding API error after retries');
+        return self::parseEmbeddingResponse($response->json());
     }
 
     private static function parseEmbeddingResponse(?array $data): array

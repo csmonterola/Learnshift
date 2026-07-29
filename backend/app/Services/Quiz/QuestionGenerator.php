@@ -101,33 +101,12 @@ class QuestionGenerator
         $cleaned = trim($cleaned);
 
         // Try to extract JSON array if there's surrounding text
-        if (!str_starts_with($cleaned, '[')) {
-            // Check for bare object {...} and wrap it in an array
-            if (str_starts_with($cleaned, '{')) {
-                $start = strpos($cleaned, '{');
-                $end = strrpos($cleaned, '}');
-                if ($start !== false && $end !== false && $end > $start) {
-                    $cleaned = '[' . substr($cleaned, $start, $end - $start + 1) . ']';
-                    Log::info('QuestionGenerator parseResponse wrapped bare object in array', [
-                        'lesson_id' => $lessonId,
-                    ]);
-                }
-            } else {
-                $start = strpos($cleaned, '[');
-                $end = strrpos($cleaned, ']');
-                if ($start !== false && $end !== false && $end > $start) {
-                    $cleaned = substr($cleaned, $start, $end - $start + 1);
-                }
+        if (str_starts_with($cleaned, '[') === false) {
+            $start = strpos($cleaned, '[');
+            $end = strrpos($cleaned, ']');
+            if ($start !== false && $end !== false && $end > $start) {
+                $cleaned = substr($cleaned, $start, $end - $start + 1);
             }
-        }
-
-        // Strip trailing commas before decoding (common AI output issue)
-        $before = $cleaned;
-        $cleaned = preg_replace('/,\s*([\]}])/', '$1', $cleaned);
-        if ($cleaned !== $before) {
-            Log::info('QuestionGenerator parseResponse stripped trailing commas', [
-                'lesson_id' => $lessonId,
-            ]);
         }
 
         $decoded = json_decode($cleaned, true);

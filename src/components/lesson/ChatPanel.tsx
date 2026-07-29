@@ -35,6 +35,7 @@ interface ChatLogEntry {
   status: string
   teacher_note: string | null
   teacher_corrected_response: string | null
+  material_image_ids: number[] | null
   created_at: string
   reviewer?: { id: number; name: string } | null
 }
@@ -320,9 +321,48 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
     setHistoryLoaded(true)
 
     studentApi.getLessonChatLogs(lessonId)
-      .then(res => {
+      .then(async res => {
         const logs: ChatLogEntry[] = res.data?.data || res.data || []
         if (logs.length === 0) return
+
+        // Collect all unique image IDs referenced across history logs
+        const allImageIds: number[] = []
+        for (const log of logs) {
+          if (log.material_image_ids && log.material_image_ids.length > 0) {
+            for (const id of log.material_image_ids) {
+              if (!allImageIds.includes(id)) {
+                allImageIds.push(id)
+              }
+            }
+          }
+        }
+
+        // Fetch image metadata for all referenced images
+        let imagesById: Record<number, ChatImage> = {}
+        if (allImageIds.length > 0) {
+          try {
+            // We need to fetch image data. Since there's no bulk endpoint,
+            // we'll build image URLs from the known pattern.
+            // The images are stored in the public disk, accessible via URL.
+            // We'll fetch them individually from the MaterialImage model
+            // by making a request to get image details.
+            // For now, we'll construct the image data from what we know:
+            // The image URL pattern is: Storage::disk('public')->url($s3Path)
+            // where s3Path = "lessons/{lessonId}/materials/{materialId}/images/{uuid}.{ext}"
+            // We can't reconstruct this without the full path, so we'll
+            // fetch the image data from the API.
+            try {
+              const imageRes = await studentApi.chatImages(lessonId, { image_ids: allImageIds })
+              for (const img of imageRes.data?.images || []) {
+                imagesById[img.id] = img
+              }
+            } catch (err) {
+              console.error('Error fetching history images:', err)
+            }
+          } catch (err) {
+            console.error('Error fetching history images:', err)
+          }
+        }
 
         const historyMessages: ChatMessage[] = []
         // Reverse so oldest appears first
@@ -337,6 +377,11 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
           })
           // AI response with teacher review data
           const displayResponse = log.teacher_corrected_response || log.response
+          const logImageIds = log.material_image_ids || []
+          const logImages: ChatImage[] = logImageIds
+            .map(id => imagesById[id])
+            .filter(Boolean) as ChatImage[]
+
           historyMessages.push({
             id: `hist-a-${log.id}`,
             role: 'assistant',
@@ -347,6 +392,7 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
             teacher_note: log.teacher_note,
             teacher_corrected_response: log.teacher_corrected_response,
             reviewer_name: log.reviewer?.name || null,
+            images: logImages.length > 0 ? logImages : undefined,
           })
         }
 

@@ -137,6 +137,8 @@ export const studentApi = {
   // Lesson Chat Logs (for history + teacher review display)
   getLessonChatLogs: (lessonId: number) =>
     api.get(`/student/lessons/${lessonId}/chat-logs`),
+  chatImages: (lessonId: number, data: { image_ids: number[] }) =>
+    api.post(`/student/lessons/${lessonId}/chat-images`, data),
 
   // Skill Tree
   getSkillTree: (classId: number) =>
@@ -222,6 +224,8 @@ export const teacherApi = {
   aiLogStats: () => api.get('/teacher/ai-logs/stats'),
   updateLogStatus: (id: number, data: { status: string; teacher_note?: string; teacher_corrected_response?: string }) =>
     api.patch(`/teacher/ai-logs/${id}/status`, data),
+  chatImages: (lessonId: number, data: { image_ids: number[] }) =>
+    api.post(`/teacher/lessons/${lessonId}/chat-images`, data),
   anonymousQuestions: () => api.get('/teacher/anonymous-questions'),
   answerQuestion: (id: number, answer: string) =>
     api.post(`/teacher/anonymous-questions/${id}/answer`, { answer }),

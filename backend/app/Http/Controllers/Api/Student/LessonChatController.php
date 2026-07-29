@@ -70,7 +70,12 @@ class LessonChatController extends Controller
         // Extract image metadata from image-type chunks for the frontend.
         $imageData = $this->extractImageData($chunks);
 
-        // Fetch all non-discarded images for this material.
+        // Fetch ALL non-discarded images — needed for two reasons:
+        // 1. Pass captions to the prompt builder's "Visual Resources Available" text listing
+        // 2. Populate $imageData so the frontend's InlineImageRenderer can find images
+        //    by page_number when the AI uses [Image: page N] markers in its response.
+        //    Without this, images referenced by the AI but not in the top-5 chunks
+        //    would fail to render inline.
         $allImages = MaterialImage::whereHas('learningMaterial', function ($q) use ($lesson, $materialIds) {
             $q->where('lesson_id', $lesson->id);
             if (!empty($materialIds)) {
@@ -82,15 +87,10 @@ class LessonChatController extends Controller
             ->orderBy('id')
             ->get();
 
-        $totalImageCount = $allImages->count();
-
-        // Only include images that have been captioned by the AI vision pipeline.
-        // Uncaptioned images have contentless IDs that cause the model to hallucinate
-        // descriptions from nearby text instead of seeing the actual image.
-        $allImages = $allImages->filter(fn ($img) => $img->caption !== null);
-
-        // Merge captioned images into the frontend response (deduplicating by ID)
-        // so the InlineImageRenderer can resolve [Image: ID] markers.
+        // Merge ALL images into the frontend response (deduplicating by ID) so that
+        // [Image: page N] markers can resolve regardless of whether the image was in
+        // the top-5 semantically matched chunks. The ImageGallery component was removed
+        // from the frontend, so no dumping occurs — images only render inline.
         $seenIds = [];
         foreach ($imageData as $d) {
             $seenIds[$d['id']] = true;
@@ -106,14 +106,6 @@ class LessonChatController extends Controller
                 'page_number' => $img->page_number,
             ];
         }
-
-        // Determine images argument for the prompt builder:
-        // - null    → no images in this material at all
-        // - empty   → images exist but none captioned yet
-        // - non-empty → captioned images available
-        $promptImages = $totalImageCount > 0 && $allImages->isEmpty()
-            ? collect()     // empty collection signals "exists but uncaptioned"
-            : ($allImages->isNotEmpty() ? $allImages : null);
 
         // Three-tier source and confidence logic
         if ($chunkCount >= 2) {
@@ -135,9 +127,9 @@ class LessonChatController extends Controller
             ->get();
 
         // Build the Mistral messages array.
-        // $promptImages provides captions for the system prompt's "Visual Resources Available" section.
+        // $allImages provides captions for the system prompt's "Visual Resources Available" section.
         // Only top-5 semantically relevant images get actual image_url data sent to the vision model.
-        $messages = $this->promptBuilder->build($chunks, $history, $question, $source, $promptImages);
+        $messages = $this->promptBuilder->build($chunks, $history, $question, $source, $allImages);
 
         // Call AI provider
         try {
@@ -162,14 +154,16 @@ class LessonChatController extends Controller
         // Persist the chat log; log silently on failure and continue
         $logId = null;
         try {
+            $imageIds = array_column($imageData, 'id');
             $log = LessonChatLog::create([
-                'student_id' => $student->id,
-                'lesson_id' => $lesson->id,
-                'question' => $question,
-                'response' => $responseText,
-                'source' => $source,
+                'student_id'        => $student->id,
+                'lesson_id'         => $lesson->id,
+                'question'          => $question,
+                'response'          => $responseText,
+                'material_image_ids'=> !empty($imageIds) ? $imageIds : null,
+                'source'            => $source,
                 'retrieved_chunk_count' => $chunkCount,
-                'confidence_score' => $confidenceScore,
+                'confidence_score'  => $confidenceScore,
             ]);
             $logId = $log->id;
         } catch (\Throwable $e) {
@@ -222,6 +216,37 @@ class LessonChatController extends Controller
         }
 
         return $data;
+    }
+
+    /**
+     * POST /api/student/lessons/{lesson}/chat-images
+     * Returns image metadata for a given set of image IDs.
+     * Used by the frontend to hydrate images in chat history.
+     */
+    public function chatImages(Request $request, Lesson $lesson): JsonResponse
+    {
+        $validated = $request->validate([
+            'image_ids'   => 'required|array',
+            'image_ids.*' => 'integer|exists:material_images,id',
+        ]);
+
+        $images = MaterialImage::whereIn('id', $validated['image_ids'])
+            ->whereIn('extraction_status', ['extracted', 'captioning'])
+            ->get();
+
+        $data = [];
+        foreach ($images as $img) {
+            if ($img->url) {
+                $data[] = [
+                    'id'          => $img->id,
+                    'url'         => $img->url,
+                    'caption'     => $img->caption,
+                    'page_number' => $img->page_number,
+                ];
+            }
+        }
+
+        return response()->json(['images' => $data]);
     }
 
     /**

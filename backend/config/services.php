@@ -85,9 +85,9 @@ return [
 
     'image_extraction' => [
         'max_images_per_material'   => (int) env('IMAGE_EXTRACTION_MAX_PER_MATERIAL', 30),
-        'min_image_dimension'       => (int) env('IMAGE_EXTRACTION_MIN_DIMENSION', 80),
-        'min_file_size'             => (int) env('IMAGE_EXTRACTION_MIN_FILE_SIZE', 1024),
-        'min_pixel_area'            => (int) env('IMAGE_EXTRACTION_MIN_PIXEL_AREA', 2500),
+        'min_image_dimension'       => (int) env('IMAGE_EXTRACTION_MIN_DIMENSION', 150),
+        'min_file_size'             => (int) env('IMAGE_EXTRACTION_MIN_FILE_SIZE', 5000),
+        'min_pixel_area'            => (int) env('IMAGE_EXTRACTION_MIN_PIXEL_AREA', 22500),
         'duplicate_hash_threshold'  => (int) env('IMAGE_EXTRACTION_DUPLICATE_THRESHOLD', 3),
         'aspect_ratio_limit'        => (float) env('IMAGE_EXTRACTION_ASPECT_RATIO', 6.0),
         'borderline_color_variance' => (float) env('IMAGE_EXTRACTION_COLOR_VARIANCE', 0.05),

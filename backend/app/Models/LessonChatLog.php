@@ -12,6 +12,7 @@ class LessonChatLog extends Model
         'lesson_id',
         'question',
         'response',
+        'material_image_ids',
         'source',
         'retrieved_chunk_count',
         'confidence_score',
@@ -23,7 +24,8 @@ class LessonChatLog extends Model
     ];
 
     protected $casts = [
-        'reviewed_at' => 'datetime',
+        'reviewed_at'        => 'datetime',
+        'material_image_ids' => 'array',
     ];
 
     public function student(): BelongsTo

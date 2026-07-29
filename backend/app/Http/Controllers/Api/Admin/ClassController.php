@@ -8,6 +8,7 @@ use App\Models\LessonChatLog;
 use App\Models\QuizResult;
 use App\Models\SchoolClass;
 use App\Models\StudentLessonProgress;
+use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +26,7 @@ class ClassController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'name'        => 'required|string',
             'grade_level' => 'required|string',
             'section'     => 'required|string',
@@ -33,7 +34,18 @@ class ClassController extends Controller
             'subject_id'  => 'required|exists:subjects,id',
         ]);
 
-        $class = SchoolClass::create($request->validated());
+        // Resolve subject_id to the subject name (string) for storage,
+        // since the classes table stores subject as TEXT, not a FK.
+        $subject = Subject::findOrFail($validated['subject_id']);
+
+        $class = SchoolClass::create([
+            'name'        => $validated['name'],
+            'grade_level' => $validated['grade_level'],
+            'section'     => $validated['section'],
+            'teacher_id'  => $validated['teacher_id'],
+            'subject'     => $subject->name,
+        ]);
+
         return response()->json($class->load(['teacher']), 201);
     }
 
@@ -44,7 +56,16 @@ class ClassController extends Controller
 
     public function update(Request $request, SchoolClass $class)
     {
-        $class->update($request->only(['name', 'grade_level', 'section', 'is_active']));
+        $data = $request->only(['name', 'grade_level', 'section', 'is_active']);
+
+        // If subject_id is provided, resolve it to the subject name
+        if ($request->has('subject_id')) {
+            $request->validate(['subject_id' => 'required|exists:subjects,id']);
+            $subject = Subject::findOrFail($request->subject_id);
+            $data['subject'] = $subject->name;
+        }
+
+        $class->update($data);
         return response()->json($class->load(['teacher']));
     }
 

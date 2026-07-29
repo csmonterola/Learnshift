@@ -44,13 +44,9 @@ class QuizPromptBuilder
             ];
         }
 
-        // Images present — build user message with text context + image parts
-        $textChunks = $chunks->filter(
-            fn ($chunk) => ($chunk->content_type ?? 'text') === 'text'
-        );
-        $context = $textChunks->map(fn ($chunk) => $chunk->chunk_text)->implode("\n\n---\n\n");
+        // Images present — use array-form content for the user message
         $userContentParts = array_merge(
-            [['type' => 'text', 'text' => $this->buildImageUserPrompt($lessonTitle, $context, $mode, $count)]],
+            [['type' => 'text', 'text' => $this->buildImageUserPrompt($lessonTitle, $mode, $count)]],
             $imageParts
         );
 
@@ -76,11 +72,9 @@ class QuizPromptBuilder
               . "8. Each question object may include two optional fields:\n"
               . '   "image_url": string|null — a URL to an image relevant to the question stem (only if provided in the lesson materials).' . "\n"
               . '   "option_image_urls": array of string|null — one per option, if an image is relevant to a specific choice.' . "\n"
-               . "   ONLY populate these with a URL that was actually provided in the given lesson materials. "
-               . "Never invent or guess a URL. When an image genuinely helps answer the question — "
-               . "for example, identifying a labeled diagram, interpreting a chart, or comparing "
-               . "visual elements — include its URL in image_url or option_image_urls. "
-               . "Omit images when the question is purely textual or conceptual.\n";
+              . "   ONLY populate these with a URL that was actually provided in the given lesson materials. "
+              . "Never invent or guess a URL. Most questions should leave both null — "
+              . "only use them when an image is genuinely relevant (e.g. 'label this diagram', 'which reaction is shown').\n";
 
         if ($mode === 'practice') {
             $base .= "\nMODE: PRACTICE\n"
@@ -115,18 +109,12 @@ class QuizPromptBuilder
         return $prompt;
     }
 
-    private function buildImageUserPrompt(string $lessonTitle, string $context, string $mode, int $count): string
+    private function buildImageUserPrompt(string $lessonTitle, string $mode, int $count): string
     {
         $prompt = "Lesson: {$lessonTitle}\n\n";
-
-        if (!empty($context)) {
-            $prompt .= "=== LESSON MATERIALS ===\n\n{$context}\n\n========================\n\n";
-        }
-
         $prompt .= "Images from the lesson materials are provided below. "
                  . "They include descriptive captions. "
-                 . "Refer to these images together with the lesson text above "
-                 . "to generate {$count} multiple-choice questions.\n";
+                 . "Refer to these images to generate {$count} multiple-choice questions.\n";
         $prompt .= "Where relevant, use the image_url and option_image_urls fields "
                  . "to link questions/options to specific images.\n\n";
         $prompt .= "Return ONLY the JSON array. No additional text.";
@@ -156,15 +144,16 @@ class QuizPromptBuilder
             $page = $chunk->page_number;
 
             $image = MaterialImage::find($chunk->material_image_id);
-            if (!$image || $image->caption === null) {
+            $url = $image?->url;
+
+            if (!$url) {
                 continue;
             }
-            $url = $image->url;
 
             $pageLabel = $page ? "page {$page}" : "unknown page";
             $parts[] = [
                 'type' => 'text',
-                'text' => "[Image: {$chunk->material_image_id}] ({$pageLabel}): {$caption}",
+                'text' => "[Image, {$pageLabel}]: {$caption}",
             ];
             $parts[] = [
                 'type' => 'image_url',

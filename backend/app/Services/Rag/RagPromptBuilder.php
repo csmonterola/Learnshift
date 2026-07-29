@@ -86,19 +86,11 @@ class RagPromptBuilder
         $context = implode("\n\n---\n\n", $contextParts);
 
         // ── Visual Resources Available section ──
-        // Lists available extracted images so the AI can reference them.
-        // null  → no images exist in this material (skip entirely).
-        // empty → images exist but none have been captioned yet (inform the AI).
-        // non-empty → captioned images are ready for reference.
+        // Lists ALL extracted images with their unique DB ID so the AI can
+        // reference the exact image. Each image has a unique ID which maps
+        // directly to the frontend's InlineImageRenderer lookup.
         $visualResources = '';
-        if ($allImages === null) {
-            // No images at all — don't mention visual resources.
-        } elseif ($allImages->isEmpty()) {
-            $visualResources = "\n\n=== VISUAL RESOURCES ===\n"
-                . "This material contains images, but their descriptions are still being generated. "
-                . "Do not reference specific images in your response."
-                . "\n\n================================";
-        } else {
+        if ($allImages !== null && $allImages->isNotEmpty()) {
             $imageLines = [];
             foreach ($allImages as $img) {
                 $pageLabel = $img->page_number ? "page {$img->page_number}" : "unknown page";
@@ -186,6 +178,7 @@ class RagPromptBuilder
                 'chunk_idx'  => $chunk->chunk_index ?? 0,
                 'caption'    => $chunk->chunk_text,
                 'url'        => $image->url,
+                'image_id'   => $image->id,
             ]);
         }
 
@@ -214,10 +207,9 @@ class RagPromptBuilder
                     $textBuffer = '';
                 }
 
-                $pageLabel = $item['page'] ? "page {$item['page']}" : "unknown page";
                 $parts[] = [
                     'type' => 'text',
-                    'text' => "[Image, {$pageLabel}]: {$item['caption']}",
+                    'text' => "[Image: {$item['image_id']}] ({$item['caption']})",
                 ];
                 $parts[] = [
                     'type' => 'image_url',

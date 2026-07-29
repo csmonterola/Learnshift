@@ -47,7 +47,7 @@ class CaptionEmbedImages extends Command
             CaptionAndEmbedImageJob::dispatch($image->id);
         }
 
-        $this->info('Done. Run "php artisan queue:work --queue=captions" to process the jobs.');
+        $this->info('Done. Run "php artisan queue:work" to process the jobs.');
 
         return self::SUCCESS;
     }

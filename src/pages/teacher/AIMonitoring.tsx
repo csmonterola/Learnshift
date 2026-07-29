@@ -20,6 +20,7 @@ import {
   FileEdit,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { InlineImageRenderer, ChatImage } from '../../components/lesson/InlineImageRenderer'
 
 interface ChatLog {
   id: number
@@ -36,6 +37,7 @@ interface ChatLog {
   reviewed_by: number | null
   reviewed_at: string | null
   created_at: string
+  material_image_ids: number[] | null
   student: {
     id: number
     name: string
@@ -67,6 +69,8 @@ interface Stats {
   needs_review: number
 }
 
+const imageCache: Record<number, ChatImage[]> = {}
+
 export function TeacherAIMonitoring() {
   const [logs, setLogs] = useState<ChatLog[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
@@ -80,6 +84,7 @@ export function TeacherAIMonitoring() {
   const [teacherNote, setTeacherNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [searchSubmitted, setSearchSubmitted] = useState('')
+  const [logImages, setLogImages] = useState<Record<number, ChatImage[]>>({})
 
   useEffect(() => {
     loadData()
@@ -96,7 +101,33 @@ export function TeacherAIMonitoring() {
         teacherApi.aiLogs(Object.keys(params).length > 0 ? params : undefined),
         teacherApi.aiLogStats(),
       ])
-      setLogs(logsRes.data?.data || logsRes.data || [])
+      const newLogs = logsRes.data?.data || logsRes.data || []
+      
+      // Collect all unique material_image_ids per lesson across all logs
+      const lessonImageIds: Record<number, Set<number>> = {}
+      for (const log of newLogs as ChatLog[]) {
+        if (log.material_image_ids && log.material_image_ids.length > 0) {
+          if (!lessonImageIds[log.lesson_id]) {
+            lessonImageIds[log.lesson_id] = new Set()
+          }
+          for (const id of log.material_image_ids) {
+            lessonImageIds[log.lesson_id].add(id)
+          }
+        }
+      }
+
+      // Fetch images per lesson with merged IDs (single API call per lesson)
+      const imageLoadPromises: Promise<ChatImage[]>[] = []
+      for (const [lessonId, ids] of Object.entries(lessonImageIds)) {
+        const uniqueIds = Array.from(ids)
+        imageLoadPromises.push(loadLogImages({ lesson_id: Number(lessonId), material_image_ids: uniqueIds } as ChatLog))
+      }
+      
+      // Wait for images to load before rendering
+      await Promise.all(imageLoadPromises)
+      
+      // Now set both logs and stats atomically
+      setLogs(newLogs)
       setStats(statsRes.data)
     } catch (err) {
       console.error('Error loading AI logs:', err)
@@ -204,11 +235,35 @@ export function TeacherAIMonitoring() {
     }
   }
 
-  const openReviewModal = (log: ChatLog) => {
+  const loadLogImages = async (log: ChatLog): Promise<ChatImage[]> => {
+    const ids = log.material_image_ids || []
+    const cacheKey = log.lesson_id
+    if (ids.length === 0) return []
+
+    // Check module-level cache first (synchronous, always available)
+    if (imageCache[cacheKey]) {
+      return imageCache[cacheKey]
+    }
+
+    try {
+      const res = await teacherApi.chatImages(cacheKey, { image_ids: ids })
+      const imgs: ChatImage[] = res.data?.images || []
+      // Cache results and update React state
+      imageCache[cacheKey] = imgs
+      setLogImages(prev => ({ ...prev, [cacheKey]: imgs }))
+      return imgs
+    } catch (err) {
+      console.error('Error loading log images:', err)
+      return []
+    }
+  }
+
+  const openReviewModal = async (log: ChatLog) => {
     setSelectedLog(log)
     setEditResponse(false)
     setTeacherNote(log.teacher_note || '')
     setCorrectedResponse(log.teacher_corrected_response || '')
+    await loadLogImages(log)
   }
 
   const getStatusBadge = (status: string) => {
@@ -407,7 +462,10 @@ export function TeacherAIMonitoring() {
                       </span>
                     </div>
                     <div className="bg-white border border-gray-200 rounded-xl p-4 text-gray-700 text-sm leading-relaxed prose prose-sm max-w-none">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayResponse}</ReactMarkdown>
+                      <InlineImageRenderer
+                        content={displayResponse}
+                        images={(logImages[log.lesson_id]?.length ? logImages[log.lesson_id] : (imageCache[log.lesson_id] || [])) as ChatImage[]}
+                      />
                     </div>
                   </div>
 
@@ -508,11 +566,16 @@ export function TeacherAIMonitoring() {
                   className="w-full min-h-[120px] px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   placeholder="Edit the AI response if needed..."
                 />
-              ) : (
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 text-sm leading-relaxed prose prose-sm max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedLog.response}</ReactMarkdown>
-                </div>
-              )}
+                ) : (
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 text-sm leading-relaxed prose prose-sm max-w-none">
+                    {selectedLog && (
+                      <InlineImageRenderer
+                        content={selectedLog.response}
+                        images={(logImages[selectedLog.lesson_id]?.length ? logImages[selectedLog.lesson_id] : (imageCache[selectedLog.lesson_id] || [])) as ChatImage[]}
+                      />
+                    )}
+                  </div>
+                )}
               {editResponse && (
                 <p className="text-xs text-amber-600 mt-1">
                   The edited version will be shown to the student. The original AI response is preserved.

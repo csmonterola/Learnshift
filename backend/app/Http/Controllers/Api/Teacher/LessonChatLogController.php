@@ -22,16 +22,7 @@ class LessonChatLogController extends Controller
 
         $logs = LessonChatLog::where('lesson_id', $lesson->id)
             ->orderBy('created_at', 'desc')
-            ->paginate(20, [
-                'id',
-                'student_id',
-                'question',
-                'response',
-                'source',
-                'retrieved_chunk_count',
-                'confidence_score',
-                'created_at',
-            ]);
+            ->paginate(20);
 
         return response()->json($logs);
     }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Teacher;
 
 use App\Http\Controllers\Controller;
+use App\Models\Lesson;
 use App\Models\LessonChatLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -74,6 +75,43 @@ class AIMonitoringController extends Controller
                 'reviewer:id,name',
             ])
         );
+    }
+
+    /**
+     * POST /api/teacher/lessons/{lesson}/chat-images
+     * Returns image metadata for a given set of image IDs.
+     * Verifies the requesting teacher owns the lesson before returning data.
+     */
+    public function chatImages(Request $request, Lesson $lesson)
+    {
+        // Authorization: verify this teacher owns the class that contains the lesson
+        if ($lesson->topic->schoolClass->teacher_id !== $request->user()->id) {
+            return response()->json(
+                ['error' => 'You are not authorized to view images for this lesson.'],
+                403
+            );
+        }
+
+        $validated = $request->validate([
+            'image_ids'   => 'required|array',
+            'image_ids.*' => 'integer|exists:material_images,id',
+        ]);
+
+        $images = \App\Models\MaterialImage::whereIn('id', $validated['image_ids'])->get();
+
+        $data = [];
+        foreach ($images as $img) {
+            if ($img->url) {
+                $data[] = [
+                    'id'          => $img->id,
+                    'url'         => $img->url,
+                    'caption'     => $img->caption,
+                    'page_number' => $img->page_number,
+                ];
+            }
+        }
+
+        return response()->json(['images' => $data]);
     }
 
     /**

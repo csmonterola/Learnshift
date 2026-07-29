@@ -109,6 +109,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('anonymous-questions',                 [AIMonitoringController::class, 'anonymousQuestions']);
         Route::post('anonymous-questions/{question}/answer', [AIMonitoringController::class, 'answerQuestion']);
         Route::get('lessons/{lesson}/chat-logs',          [LessonChatLogController::class, 'index']);
+        Route::post('lessons/{lesson}/chat-images',       [AIMonitoringController::class, 'chatImages']);
 
         // Class Progress Monitoring
         Route::get('classes/{classId}/progress',          [ClassProgressController::class, 'index']);
@@ -149,6 +150,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('ask-teacher',                        [ChatbotController::class, 'askTeacher']);
         Route::get('ask-teacher/answers',                 [ChatbotController::class, 'myAnonymousAnswers']);
         Route::post('lessons/{lesson}/chat',              [LessonChatController::class, 'ask']);
+        Route::post('lessons/{lesson}/chat-images',       [LessonChatController::class, 'chatImages']);
         Route::get('lessons/{lesson}/chat-logs',          [LessonChatController::class, 'logs']);
 
         // Lesson Practice (AI-generated, NOT saved)

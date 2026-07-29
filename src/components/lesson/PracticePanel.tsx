@@ -43,7 +43,6 @@ function DifficultyBadge({ difficulty }: { difficulty: string }) {
 // ── PracticePanel ──────────────────────────────────────────────────
 export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelProps) {
   const [questions, setQuestions]     = useState<GeneratedQuestion[]>([])
-  const [source, setSource]           = useState<string | null>(null)
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
   const [current, setCurrent]         = useState(0)
@@ -67,7 +66,6 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
     try {
       const res = await studentApi.generatePracticeQuestions(lessonId)
       setQuestions(res.data.questions)
-      setSource(res.data.source || null)
     } catch (err: any) {
       const msg = err?.response?.data?.error || 'Failed to generate questions. Please try again.'
       setError(msg)
@@ -166,13 +164,6 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
   // ── Question Screen ────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full p-5">
-      {/* Fallback notice */}
-      {source === 'fallback' && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-          AI-generated questions unavailable — showing sample questions. Try generating again.
-        </div>
-      )}
-
       {/* Progress bar */}
       <div className="mb-5">
         <div className="flex justify-between text-xs text-gray-400 mb-1.5">
