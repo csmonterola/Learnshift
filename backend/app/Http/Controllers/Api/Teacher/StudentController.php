@@ -14,10 +14,15 @@ class StudentController extends Controller
 {
     public function searchStudents(Request $request)
     {
-        $request->validate(['search' => 'required|string|min:2']);
+        $request->validate(['search' => 'required|string|min:1']);
+
+        $search = trim($request->search);
 
         $students = User::where('role', 'student')
-            ->where('name', 'like', '%' . $request->search . '%')
+            ->where(function ($q) use ($search) {
+                $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($search) . '%'])
+                  ->orWhereRaw('LOWER(email) LIKE ?', ['%' . strtolower($search) . '%']);
+            })
             ->select('id', 'name', 'email', 'role', 'avatar', 'enrollment_code', 'is_active')
             ->limit(20)
             ->get();
@@ -44,7 +49,10 @@ class StudentController extends Controller
         // Get students enrolled in those classes, with class info
         $students = User::where('role', 'student')
             ->whereHas('enrolledClasses', fn($q) => $q->whereIn('classes.id', $teacherClassIds))
-            ->when($request->search, fn($q) => $q->where('name', 'like', '%' . $request->search . '%'))
+            ->when($request->search, function ($q) use ($request) {
+                $search = trim($request->search);
+                $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($search) . '%']);
+            })
             ->get()
             ->map(function ($student) use ($teacherClassIds) {
                 // Get the classes this student is enrolled in that belong to this teacher
@@ -185,13 +193,38 @@ class StudentController extends Controller
 
     public function show(Request $request, User $student)
     {
-        return response()->json(
-            $student->load([
-                'subjectMastery.subject',
-                'topicProgress.topic.quarter',
-                'practiceAttempts' => fn($q) => $q->latest()->take(10),
-                'chatbotLogs'      => fn($q) => $q->latest()->take(5),
-            ])
-        );
+        $student->load([
+            'subjectMastery.subject',
+            'topicProgress.topic.quarter',
+            'lessonProgress.lesson',
+            'practiceAttempts' => fn($q) => $q->latest()->take(10),
+            'chatbotLogs'      => fn($q) => $q->latest()->take(5),
+        ]);
+
+        // The list endpoint computes overall_mastery from student_lesson_progress,
+        // but the raw User model doesn't carry that computed value. Recompute it
+        // here so the detail modal's header and body read the SAME source,
+        // and expose lesson progress so the modal has real data to show.
+        $lessonProgress = $student->lessonProgress ?? collect();
+        $totalLessons = $lessonProgress->count();
+        $overallMastery = $totalLessons > 0
+            ? (int) round($lessonProgress->sum('mastery_percentage') / $totalLessons)
+            : 0;
+
+        $data = $student->toArray();
+        $data['overall_mastery'] = $overallMastery;
+        $data['status'] = $overallMastery >= 80 ? 'Excelling'
+            : ($overallMastery >= 70 ? 'On Track' : ($overallMastery > 0 ? 'Developing' : 'Not Started'));
+        // Normalize the loaded lesson progress into a camelCase-friendly list
+        // that the frontend modal can render directly.
+        $data['lesson_progress'] = $lessonProgress->map(fn ($lp) => [
+            'id' => $lp->id,
+            'lesson_id' => $lp->lesson_id,
+            'lesson_title' => $lp->lesson?->title ?? "Lesson #{$lp->lesson_id}",
+            'mastery_percentage' => (int) $lp->mastery_percentage,
+            'status' => $lp->status,
+        ])->values()->all();
+
+        return response()->json($data);
     }
 }

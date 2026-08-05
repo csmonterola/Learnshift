@@ -13,6 +13,7 @@ use App\Services\Rag\LessonRetriever;
 use App\Services\Rag\RagPromptBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class LessonChatController extends Controller
@@ -272,5 +273,77 @@ class LessonChatController extends Controller
             ->paginate(20);
 
         return response()->json($logs);
+    }
+
+    /**
+     * POST /api/student/lessons/{lesson}/chat-logs/{log}/pin
+     * Saves a pin so the student can quickly return to this AI answer.
+     */
+    public function pinLog(Request $request, Lesson $lesson, LessonChatLog $log): JsonResponse
+    {
+        $student = $request->user();
+
+        if (! $this->isOwnLog($student->id, $lesson->id, $log)) {
+            return response()->json(['error' => 'This chat log does not belong to you.'], 403);
+        }
+
+        DB::table('pinned_lesson_chat_logs')->updateOrInsert(
+            ['user_id' => $student->id, 'lesson_chat_log_id' => $log->id],
+            ['created_at' => now(), 'updated_at' => now()]
+        );
+
+        return response()->json(['pinned' => true]);
+    }
+
+    /**
+     * DELETE /api/student/lessons/{lesson}/chat-logs/{log}/unpin
+     * Removes a previously saved pin.
+     */
+    public function unpinLog(Request $request, Lesson $lesson, LessonChatLog $log): JsonResponse
+    {
+        $student = $request->user();
+
+        DB::table('pinned_lesson_chat_logs')
+            ->where('user_id', $student->id)
+            ->where('lesson_chat_log_id', $log->id)
+            ->delete();
+
+        return response()->json(['pinned' => false]);
+    }
+
+    /**
+     * GET /api/student/lessons/{lesson}/pinned-chat-logs
+     * Returns the authenticated student's pinned AI answers for this lesson.
+     */
+    public function getPinnedLogs(Request $request, Lesson $lesson): JsonResponse
+    {
+        $student = $request->user();
+
+        $isEnrolled = $lesson->topic->schoolClass->students()
+            ->where('users.id', $student->id)
+            ->exists();
+
+        if (! $isEnrolled) {
+            return response()->json(['error' => 'You are not enrolled in the class for this lesson.'], 403);
+        }
+
+        $pins = DB::table('pinned_lesson_chat_logs as p')
+            ->join('lesson_chat_logs as l', 'l.id', '=', 'p.lesson_chat_log_id')
+            ->where('p.user_id', $student->id)
+            ->where('l.lesson_id', $lesson->id)
+            ->select(
+                'l.*',
+                'p.lesson_chat_log_id',
+                'p.created_at as pinned_at'
+            )
+            ->orderBy('p.created_at', 'desc')
+            ->get();
+
+        return response()->json($pins);
+    }
+
+    private function isOwnLog(int $studentId, int $lessonId, LessonChatLog $log): bool
+    {
+        return $log->student_id === $studentId && $log->lesson_id === $lessonId;
     }
 }

@@ -93,9 +93,13 @@ export function TeacherAIMonitoring() {
   const loadData = async (searchVal?: string, statusVal?: string) => {
     setLoading(true)
     try {
+      // Combine search + status filter — use the passed value if provided,
+      // otherwise fall back to the current state so both filters persist.
+      const effectiveSearch = searchVal !== undefined ? searchVal : searchSubmitted
+      const effectiveStatus = statusVal !== undefined ? statusVal : statusFilter
       const params: { search?: string; status?: string } = {}
-      if (searchVal || searchSubmitted) params.search = searchVal || searchSubmitted
-      if (statusVal || statusFilter) params.status = statusVal || statusFilter
+      if (effectiveSearch) params.search = effectiveSearch
+      if (effectiveStatus) params.status = effectiveStatus
 
       const [logsRes, statsRes] = await Promise.all([
         teacherApi.aiLogs(Object.keys(params).length > 0 ? params : undefined),
@@ -596,37 +600,37 @@ export function TeacherAIMonitoring() {
               />
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-3">
+            {/* Actions - sticky footer with consistent sizing */}
+            <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-100">
               <button
-                onClick={handleVerify}
-                disabled={saving}
-                className="flex items-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50"
+                onClick={() => { setSelectedLog(null); setEditResponse(false) }}
+                className="h-11 px-5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition-colors"
               >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check size={16} />}
-                Approve
-              </button>
-              <button
-                onClick={handleFlag}
-                disabled={saving}
-                className="flex items-center gap-2 px-6 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag size={16} />}
-                Flag as Wrong
+                Cancel
               </button>
               <button
                 onClick={handleSaveReview}
                 disabled={saving}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50"
+                className="h-11 px-5 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye size={16} />}
                 Save Review
               </button>
               <button
-                onClick={() => { setSelectedLog(null); setEditResponse(false) }}
-                className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition-colors"
+                onClick={handleFlag}
+                disabled={saving}
+                className="h-11 px-5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
               >
-                Cancel
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag size={16} />}
+                Flag as Wrong
+              </button>
+              <button
+                onClick={handleVerify}
+                disabled={saving}
+                className="h-11 px-5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check size={16} />}
+                Approve
               </button>
             </div>
           </motion.div>

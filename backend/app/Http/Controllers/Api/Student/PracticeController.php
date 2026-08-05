@@ -10,6 +10,7 @@ use App\Models\Topic;
 use App\Services\Quiz\QuestionGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class PracticeController extends Controller
 {
@@ -61,10 +62,12 @@ class PracticeController extends Controller
             'lesson_ids' => 'required|array|min:1',
             'lesson_ids.*' => 'integer|exists:lessons,id',
             'count' => 'integer|min:1|max:20',
+            'difficulty' => 'nullable|in:Easy,Medium,Hard',
         ]);
 
         $student = $request->user();
         $lessonIds = $request->lesson_ids;
+        $difficulty = $request->difficulty;
 
         // Verify enrollment
         $enrolledLessonIds = DB::table('lessons')
@@ -82,57 +85,114 @@ class PracticeController extends Controller
         $lessons = Lesson::whereIn('id', $enrolledLessonIds)->get();
         $count = min($request->count ?? 10, 20);
         $allQuestions = [];
-        $questionsPerLesson = max(1, intdiv($count, $lessons->count()));
 
+        // Distribute the requested count across lessons, then chunk each
+        // lesson's quota into batches. Hard questions are far more verbose
+        // (longer stems + full-sentence options), so use a smaller batch
+        // size for Hard to stay under the token ceiling and the 30s timeout.
+        $maxBatchSize = strtolower($difficulty ?? '') === 'hard' ? 3 : 5;
+        $questionsPerLesson = max(1, intdiv($count, $lessons->count()));
+        $remaining = $count;
+
+        $batches = [];
         foreach ($lessons as $lesson) {
-            if (count($allQuestions) >= $count) {
+            if ($remaining <= 0) {
                 break;
             }
+            $quota = min($questionsPerLesson, $remaining);
+            $remaining -= $quota;
 
-            try {
-                $result = $this->questionGenerator->generate($lesson, 'practice', $questionsPerLesson);
-
-                foreach ($result['questions'] as $q) {
-                    if (count($allQuestions) >= $count) {
-                        break;
-                    }
-                    $allQuestions[] = [
-                        'id' => count($allQuestions) + 1,
-                        'lesson_id' => $lesson->id,
-                        'question' => $q['question'],
-                        'options' => $q['options'],
-                        'correct_index' => $q['correct_index'],
-                        'explanation' => $q['explanation'] ?? '',
-                    ];
-                }
-            } catch (\RuntimeException $e) {
-                // If AI fails for one lesson, continue with others
-                // Don't fail the whole request — return what we have
-                continue;
+            for ($offset = 0; $offset < $quota; $offset += $maxBatchSize) {
+                $batchSize = min($maxBatchSize, $quota - $offset);
+                $batches[] = ['lesson' => $lesson, 'size' => $batchSize];
             }
         }
 
-        // If AI failed completely, fall back to mock questions
-        if (empty($allQuestions)) {
-            foreach ($lessons->take(3) as $lesson) {
-                for ($i = 0; $i < $count && count($allQuestions) < $count; $i++) {
-                    $allQuestions[] = [
-                        'id' => count($allQuestions) + 1,
-                        'lesson_id' => $lesson->id,
-                        'question' => "Practice question for {$lesson->title}?",
-                        'options' => ['Option A', 'Option B', 'Option C', 'Option D'],
-                        'correct_index' => 0,
-                        'explanation' => "Review the lesson content for {$lesson->title} to learn more.",
-                    ];
-                }
+        // Run batches concurrently (Laravel 12 concurrency helper), but cap
+        // the concurrency window at 3. Running 7+ simultaneous Mistral calls
+        // trips the provider's rate limit / 30s timeout (observed: count=20
+        // with 7 batches failed 4 batches; count=15 with 5 batches worked).
+        // Each closure must take zero arguments — bind the batch + difficulty
+        // into the closure via `use` so the subprocess driver can serialize it.
+        $results = [];
+        foreach (array_chunk($batches, 3) as $window) {
+            $windowResults = \Illuminate\Support\Facades\Concurrency::run(
+                collect($window)->map(function ($b) use ($difficulty) {
+                    return fn () => $this->generateBatch($b['lesson'], $b['size'], $difficulty);
+                })->all()
+            );
+            array_push($results, ...$windowResults);
+        }
+
+        foreach ($results as $result) {
+            if ($result === null) {
+                continue;
             }
+            foreach ($result as $q) {
+                if (count($allQuestions) >= $count) {
+                    break;
+                }
+                $allQuestions[] = [
+                    'id' => count($allQuestions) + 1,
+                    'lesson_id' => $q['lesson_id'],
+                    'question' => $q['question'],
+                    'options' => $q['options'],
+                    'correct_index' => $q['correct_index'],
+                    'explanation' => $q['explanation'] ?? '',
+                ];
+            }
+        }
+
+        // No more silent mock fallback. If nothing generated, return an
+        // honest error so the frontend can surface it instead of showing
+        // fake placeholder questions.
+        if (empty($allQuestions)) {
+            Log::error('Practice generation produced zero questions', [
+                'student_id' => $student->id,
+                'lesson_ids' => $lessonIds,
+                'count' => $count,
+                'difficulty' => $difficulty,
+            ]);
+            return response()->json([
+                'error' => 'Unable to generate practice questions. The AI service may be unavailable. Please try again.',
+                'questions' => [],
+                'total' => 0,
+            ], 502);
         }
 
         return response()->json([
             'questions' => $allQuestions,
             'total' => count($allQuestions),
+            'partial' => count($allQuestions) < $count,
             'lessons' => $lessons->pluck('id'),
         ]);
+    }
+
+    /**
+     * Generate a single batch of questions for a lesson.
+     *
+     * @return array<int, array{lesson_id:int, question:string, options:array, correct_index:int, explanation:string}>|null
+     */
+    private function generateBatch(Lesson $lesson, int $size, ?string $difficulty): ?array
+    {
+        try {
+            $result = $this->questionGenerator->generate($lesson, 'practice', $size, $difficulty);
+
+            return array_map(fn ($q) => [
+                'lesson_id' => $lesson->id,
+                'question' => $q['question'],
+                'options' => $q['options'],
+                'correct_index' => $q['correct_index'],
+                'explanation' => $q['explanation'] ?? '',
+            ], $result['questions']);
+        } catch (\RuntimeException $e) {
+            Log::warning('Practice batch generation failed', [
+                'lesson_id' => $lesson->id,
+                'size' => $size,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 
     /**

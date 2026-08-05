@@ -35,9 +35,14 @@ class AIMonitoringController extends Controller
             ])
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->search, function ($q, $search) {
-                $q->where(function ($q) use ($search) {
-                    $q->where('question', 'like', "%{$search}%")
-                      ->orWhereHas('student', fn($q) => $q->where('name', 'like', "%{$search}%"));
+                $search = trim($search);
+                $lower = strtolower($search);
+                $q->where(function ($q) use ($lower) {
+                    $q->whereRaw('LOWER(question) LIKE ?', ["%{$lower}%"])
+                      ->orWhereHas('student', fn($q) => $q->whereRaw('LOWER(name) LIKE ?', ["%{$lower}%"]))
+                      ->orWhereHas('lesson', fn($q) => $q->whereRaw('LOWER(title) LIKE ?', ["%{$lower}%"]))
+                      ->orWhereHas('lesson.topic', fn($q) => $q->whereRaw('LOWER(title) LIKE ?', ["%{$lower}%"]))
+                      ->orWhereHas('lesson.topic.schoolClass', fn($q) => $q->whereRaw('LOWER(subject) LIKE ?', ["%{$lower}%"]));
                 });
             })
             ->latest()

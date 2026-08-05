@@ -54,6 +54,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('messages/{userId}',                   [MessageController::class, 'getMessages']);
     Route::post('messages',                           [MessageController::class, 'send']);
     Route::get('messages/unread-count',               [MessageController::class, 'unreadCount']);
+    Route::post('messages/pin-message/{messageId}',   [MessageController::class, 'pinMessage']);
+    Route::post('messages/unpin-message/{messageId}', [MessageController::class, 'unpinMessage']);
+    Route::get('messages/pinned',                     [MessageController::class, 'getPinnedMessages']);
+    Route::post('messages/pin/{otherUserId}',         [MessageController::class, 'pinConversation']);
+    Route::post('messages/unpin/{otherUserId}',       [MessageController::class, 'unpinConversation']);
 
     // ── Curriculum (shared) ──────────────────────────────────────
     Route::get('/subjects',                               [CurriculumController::class, 'subjects']);
@@ -93,6 +98,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('classes/{classId}/topics',                                                    [TeacherTopicController::class, 'indexTopics']);
         Route::post('classes/{classId}/topics',                                                   [TeacherTopicController::class, 'storeTopic']);
         Route::patch('classes/{classId}/topics/{topicId}',                                        [TeacherTopicController::class, 'updateTopic']);
+        Route::patch('classes/{classId}/topics/{topicId}/lessons/{lessonId}',                     [TeacherTopicController::class, 'updateLesson']);
         Route::delete('classes/{classId}/topics/{topicId}',                                       [TeacherTopicController::class, 'destroyTopic']);
         Route::post('classes/{classId}/topics/{topicId}/lessons',                                 [TeacherTopicController::class, 'storeLessonForTopic']);
         Route::delete('classes/{classId}/topics/{topicId}/lessons/{lessonId}',                    [TeacherTopicController::class, 'destroyLesson']);
@@ -152,6 +158,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('lessons/{lesson}/chat',              [LessonChatController::class, 'ask']);
         Route::post('lessons/{lesson}/chat-images',       [LessonChatController::class, 'chatImages']);
         Route::get('lessons/{lesson}/chat-logs',          [LessonChatController::class, 'logs']);
+        Route::post('lessons/{lesson}/chat-logs/{log}/pin',     [LessonChatController::class, 'pinLog']);
+        Route::delete('lessons/{lesson}/chat-logs/{log}/unpin', [LessonChatController::class, 'unpinLog']);
+        Route::get('lessons/{lesson}/pinned-chat-logs',        [LessonChatController::class, 'getPinnedLogs']);
 
         // Lesson Practice (AI-generated, NOT saved)
         Route::post('lessons/{lesson}/practice/generate', [LessonPracticeController::class, 'generate']);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { studentApi } from '../../lib/api'
+import { useTheme } from '../../components/theme/ThemeProvider'
 import {
   User, Mail, Lock, Bell, Palette, Globe, Shield,
   Save, Loader2, AlertTriangle, Check, Camera, Trash2,
@@ -8,6 +9,7 @@ import {
 type Tab = 'general' | 'account' | 'appearance' | 'danger'
 
 export function StudentSettings() {
+  const { setTheme: applyThemeToDOM } = useTheme()
   const [activeTab, setActiveTab] = useState<Tab>('general')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -45,6 +47,9 @@ export function StudentSettings() {
       setLanguage(user.language || 'en')
       setEmailNotifications(user.email_notifications ?? true)
       setTheme(user.theme || 'light')
+      // Sync DB theme to localStorage so ThemeProvider picks it up
+      localStorage.setItem('theme', user.theme || 'light')
+      applyThemeToDOM((user.theme || 'light') as 'light' | 'dark')
       if (profile) {
         setGradeLevel(profile.grade_level || '')
         setSection(profile.section || '')
@@ -373,7 +378,7 @@ export function StudentSettings() {
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => setTheme(opt.value)}
+                      onClick={() => { setTheme(opt.value); applyThemeToDOM(opt.value as 'light' | 'dark') }}
                       className={`p-4 rounded-xl border-2 text-left transition-colors ${
                         theme === opt.value
                           ? 'border-emerald-500 bg-emerald-50'

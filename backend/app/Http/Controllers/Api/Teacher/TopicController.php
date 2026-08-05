@@ -141,6 +141,20 @@ class TopicController extends Controller
         return response()->json(['message' => 'Lesson deleted.']);
     }
 
+    public function updateLesson(Request $request, int $classId, int $topicId, int $lessonId)
+    {
+        $this->authorizeClass($request, $classId);
+        $lesson = Lesson::where('id', $lessonId)->where('topic_id', $topicId)->firstOrFail();
+
+        $validated = $request->validate([
+            'title'   => 'sometimes|required|string|max:255',
+            'content' => 'nullable|string',
+        ]);
+
+        $lesson->update($validated);
+        return response()->json($lesson);
+    }
+
     // ── Materials (file uploads) ──────────────────────────────────
 
     public function storeMaterial(Request $request, int $classId, int $topicId, int $lessonId)

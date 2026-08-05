@@ -25,11 +25,12 @@ class QuestionGenerator
      * @param  Lesson  $lesson  The lesson to generate questions for
      * @param  string  $mode  'practice' or 'quiz'
      * @param  int  $count  Number of questions (default 5)
+     * @param  string|null  $difficulty  'Easy'|'Medium'|'Hard' to target the prompt (default null = mixed)
      * @return array ['questions' => [...], 'source' => string]
      *
      * @throws \RuntimeException On AI service failure
      */
-    public function generate(Lesson $lesson, string $mode = 'practice', int $count = 5): array
+    public function generate(Lesson $lesson, string $mode = 'practice', int $count = 5, ?string $difficulty = null): array
     {
         // Step 1: Embed the lesson title + content as the query vector
         $queryText = $lesson->title;
@@ -61,13 +62,13 @@ class QuestionGenerator
         }
 
         // Step 3: Build the prompt
-        $messages = $this->promptBuilder->build($chunks, $lesson->title, $mode, $count);
+        $messages = $this->promptBuilder->build($chunks, $lesson->title, $mode, $count, $difficulty);
 
         // Step 4: Call AI provider
         try {
             $provider = AiProviderFactory::make('chat');
             $result = $provider->chat($messages, [
-                'max_tokens' => 2000,
+                'max_tokens' => 6000,
                 'temperature' => 0.7,
             ]);
             $responseText = $result['content'];
@@ -91,6 +92,10 @@ class QuestionGenerator
     /**
      * Parse the AI response into a structured question array.
      * Handles common formatting issues (markdown fences, extra text, etc.)
+     *
+     * If the response is truncated mid-array (token ceiling hit), this
+     * salvages the complete question objects that were fully emitted before
+     * the cut-off instead of discarding the entire response.
      */
     private function parseResponse(string $responseText, int $lessonId): array
     {
@@ -110,6 +115,14 @@ class QuestionGenerator
         }
 
         $decoded = json_decode($cleaned, true);
+
+        // If the full JSON didn't parse, try to salvage complete question
+        // objects from a truncated array. The AI emits a JSON array of
+        // objects; when the token ceiling cuts it off, the first N objects
+        // are usually complete and only the last one is truncated.
+        if (! is_array($decoded) || empty($decoded)) {
+            $decoded = $this->salvageTruncatedJson($cleaned);
+        }
 
         if (! is_array($decoded) || empty($decoded)) {
             Log::error('QuestionGenerator failed to parse AI response', [
@@ -153,5 +166,77 @@ class QuestionGenerator
         }
 
         return $questions;
+    }
+
+    /**
+     * Attempt to recover complete question objects from a truncated JSON
+     * array. Scans for balanced `{...}` object literals and decodes each one
+     * independently, keeping only those that are valid question objects.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function salvageTruncatedJson(string $text): array
+    {
+        $salvaged = [];
+        $length = strlen($text);
+        $i = 0;
+
+        while ($i < $length) {
+            // Find the next opening brace
+            $start = strpos($text, '{', $i);
+            if ($start === false) {
+                break;
+            }
+
+            // Scan for the matching closing brace, tracking string literals
+            // so braces inside strings don't confuse the balance.
+            $depth = 0;
+            $inString = false;
+            $escaped = false;
+            $end = -1;
+
+            for ($j = $start; $j < $length; $j++) {
+                $ch = $text[$j];
+
+                if ($inString) {
+                    if ($escaped) {
+                        $escaped = false;
+                    } elseif ($ch === '\\') {
+                        $escaped = true;
+                    } elseif ($ch === '"') {
+                        $inString = false;
+                    }
+                    continue;
+                }
+
+                if ($ch === '"') {
+                    $inString = true;
+                } elseif ($ch === '{') {
+                    $depth++;
+                } elseif ($ch === '}') {
+                    $depth--;
+                    if ($depth === 0) {
+                        $end = $j;
+                        break;
+                    }
+                }
+            }
+
+            if ($end === -1) {
+                // No balanced object found — rest is truncated, stop.
+                break;
+            }
+
+            $objectJson = substr($text, $start, $end - $start + 1);
+            $obj = json_decode($objectJson, true);
+
+            if (is_array($obj) && isset($obj['question'], $obj['options'], $obj['correct_index'])) {
+                $salvaged[] = $obj;
+            }
+
+            $i = $end + 1;
+        }
+
+        return $salvaged;
     }
 }

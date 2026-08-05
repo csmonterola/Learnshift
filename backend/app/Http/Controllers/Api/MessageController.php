@@ -41,6 +41,12 @@ class MessageController extends Controller
             ->orderBy('last_message_time', 'desc')
             ->get();
 
+        // Load pinned conversation IDs
+        $pinnedIds = DB::table('conversation_pins')
+            ->where('user_id', $userId)
+            ->pluck('other_user_id')
+            ->toArray();
+
         $result = [];
         foreach ($conversations as $conv) {
             $otherUser = User::find($conv->other_user_id);
@@ -55,9 +61,18 @@ class MessageController extends Controller
                     ],
                     'last_message_time' => $conv->last_message_time,
                     'message_count' => $conv->message_count,
+                    'pinned' => in_array($otherUser->id, $pinnedIds),
                 ];
             }
         }
+
+        // Sort pinned first, then by last_message_time desc
+        usort($result, function ($a, $b) {
+            $aPin = $a['pinned'] ? 1 : 0;
+            $bPin = $b['pinned'] ? 1 : 0;
+            if ($aPin !== $bPin) return $bPin <=> $aPin;
+            return strtotime($b['last_message_time']) <=> strtotime($a['last_message_time']);
+        });
 
         return response()->json($result);
     }
@@ -77,25 +92,23 @@ class MessageController extends Controller
             return response()->json([]);
         }
 
+        $fields = ['id', 'sender_id', 'receiver_id', 'content', 'is_read', 'created_at'];
+
+        // UNION ALL the two directions separately so each branch can use the
+        // (sender_id, receiver_id, created_at) index (avoids the slow OR scan).
+        $sent = DB::table('messages')
+            ->select($fields)
+            ->where('sender_id', $currentUserId)
+            ->where('receiver_id', $userId);
+
         $messages = DB::table('messages')
-            ->where(function ($query) use ($currentUserId, $userId) {
-                $query->where('sender_id', $currentUserId)
-                      ->where('receiver_id', $userId);
-            })
-            ->orWhere(function ($query) use ($currentUserId, $userId) {
-                $query->where('sender_id', $userId)
-                      ->where('receiver_id', $currentUserId);
-            })
+            ->select($fields)
+            ->where('sender_id', $userId)
+            ->where('receiver_id', $currentUserId)
+            ->unionAll($sent)
             ->orderBy('created_at', 'asc')
             ->limit(100)
-            ->get([
-                'id',
-                'sender_id',
-                'receiver_id',
-                'content',
-                'is_read',
-                'created_at'
-            ]);
+            ->get();
 
         DB::table('messages')
             ->where('sender_id', $userId)
@@ -150,6 +163,17 @@ class MessageController extends Controller
                 'created_at'
             ]);
 
+        // Broadcast the new message via Reverb
+        try {
+            $messageModel = \App\Models\Message::find($messageId);
+            if ($messageModel) {
+                event(new \App\Events\MessageSent($messageModel));
+            }
+        } catch (\Throwable $e) {
+            // Don't fail the request if broadcasting fails
+            \Illuminate\Support\Facades\Log::warning('Message broadcast failed', ['error' => $e->getMessage()]);
+        }
+
         return response()->json($newMessage, 201);
     }
 
@@ -163,5 +187,67 @@ class MessageController extends Controller
             ->count();
 
         return response()->json(['count' => $count]);
+    }
+
+    public function pinConversation(Request $request, $otherUserId): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        DB::table('conversation_pins')->updateOrInsert(
+            ['user_id' => $userId, 'other_user_id' => $otherUserId],
+            ['pinned_at' => now(), 'created_at' => now(), 'updated_at' => now()]
+        );
+
+        return response()->json(['pinned' => true]);
+    }
+
+    public function unpinConversation(Request $request, $otherUserId): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        DB::table('conversation_pins')
+            ->where('user_id', $userId)
+            ->where('other_user_id', $otherUserId)
+            ->delete();
+
+        return response()->json(['pinned' => false]);
+    }
+
+    public function pinMessage(Request $request, $messageId): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        DB::table('pinned_messages')->updateOrInsert(
+            ['user_id' => $userId, 'message_id' => $messageId],
+            ['created_at' => now(), 'updated_at' => now()]
+        );
+
+        return response()->json(['pinned' => true]);
+    }
+
+    public function unpinMessage(Request $request, $messageId): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        DB::table('pinned_messages')
+            ->where('user_id', $userId)
+            ->where('message_id', $messageId)
+            ->delete();
+
+        return response()->json(['pinned' => false]);
+    }
+
+    public function getPinnedMessages(Request $request): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        $pinned = DB::table('pinned_messages')
+            ->where('user_id', $userId)
+            ->join('messages', 'messages.id', '=', 'pinned_messages.message_id')
+            ->select('messages.*', 'pinned_messages.id as pin_id', 'pinned_messages.created_at as pinned_at')
+            ->orderBy('pinned_messages.created_at', 'desc')
+            ->get();
+
+        return response()->json($pinned);
     }
 }

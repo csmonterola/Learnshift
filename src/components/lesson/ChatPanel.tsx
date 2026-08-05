@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Bot, User, Send, ShieldCheck, ShieldAlert, Eye, FileEdit, Loader2, X, Maximize2 } from 'lucide-react'
+import { Bot, User, Send, ShieldCheck, ShieldAlert, Eye, FileEdit, Loader2, X, Maximize2, Bookmark } from 'lucide-react'
 import { studentApi } from '../../lib/api'
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -314,6 +314,47 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
   const [loading, setLoading] = useState(false)
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [pinnedIds, setPinnedIds] = useState<Set<number>>(new Set())
+  const [showPinned, setShowPinned] = useState(false)
+  const [highlightedId, setHighlightedId] = useState<number | null>(null)
+  const msgRefs = useRef<Record<number, HTMLDivElement | null>>({})
+
+  // Load the student's pinned AI answers for this lesson
+  useEffect(() => {
+    studentApi.getPinnedLessonLogs(lessonId)
+      .then(res => {
+        const pinned: any[] = res.data || []
+        setPinnedIds(new Set(pinned.map(p => p.lesson_chat_log_id ?? p.id)))
+      })
+      .catch(err => console.error('Error loading pinned logs:', err))
+  }, [lessonId])
+
+  const togglePin = async (msg: ChatMessage) => {
+    if (!msg.log_id) return
+    const logId = msg.log_id
+    const isPinned = pinnedIds.has(logId)
+    try {
+      if (isPinned) {
+        await studentApi.unpinLessonLog(lessonId, logId)
+        setPinnedIds(prev => { const next = new Set(prev); next.delete(logId); return next })
+      } else {
+        await studentApi.pinLessonLog(lessonId, logId)
+        setPinnedIds(prev => new Set(prev).add(logId))
+      }
+    } catch (error) {
+      console.error('Error toggling message pin:', error)
+    }
+  }
+
+  const jumpToPinned = (logId: number) => {
+    setShowPinned(false)
+    const el = msgRefs.current[logId]
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setHighlightedId(logId)
+      window.setTimeout(() => setHighlightedId(null), 2000)
+    }
+  }
 
   // Load past chat logs from the API
   useEffect(() => {
@@ -414,6 +455,10 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
       ? `Using ${selectedMaterialIds.size} source${selectedMaterialIds.size === 1 ? '' : 's'}`
       : 'Using all sources'
 
+  const pinnedMessages = messages.filter(
+    m => m.role === 'assistant' && m.log_id && pinnedIds.has(m.log_id)
+  )
+
   const send = async () => {
     if (!input.trim() || loading) return
     const question = input.trim()
@@ -456,20 +501,69 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
   return (
     <div className="flex flex-col h-full">
       {/* Chat header */}
-      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between bg-white shrink-0">
+      <div className="relative px-4 py-2.5 border-b border-gray-100 flex items-center justify-between bg-white shrink-0">
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-emerald-600" />
           <span className="text-sm font-medium text-gray-700">AI Study Assistant</span>
         </div>
-        <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
-          {sourceIndicator}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
+            {sourceIndicator}
+          </span>
+          <button
+            onClick={() => setShowPinned(prev => !prev)}
+            className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+              pinnedIds.size > 0
+                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+            title="Show pinned AI answers"
+          >
+            <Bookmark size={13} fill={pinnedIds.size > 0 ? 'currentColor' : 'none'} />
+            Pinned {pinnedIds.size > 0 ? `(${pinnedIds.size})` : ''}
+          </button>
+        </div>
+
+        {/* Pinned dropdown */}
+        {showPinned && (
+          <div className="absolute top-full right-0 mt-1 w-80 max-h-72 bg-white rounded-xl shadow-xl border border-gray-200 z-20 overflow-hidden flex flex-col">
+            <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-700">Saved AI answers</p>
+              <button onClick={() => setShowPinned(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {pinnedMessages.length === 0 ? (
+                <p className="p-4 text-xs text-gray-400 text-center">
+                  No saved answers yet. Tap the bookmark on any AI reply to save it here.
+                </p>
+              ) : (
+                pinnedMessages.map(m => (
+                  <button
+                    key={m.log_id}
+                    onClick={() => jumpToPinned(m.log_id!)}
+                    className="w-full text-left px-3 py-2.5 border-b border-gray-50 hover:bg-amber-50 transition-colors"
+                  >
+                    <p className="text-xs text-gray-700 line-clamp-2">{m.content}</p>
+                    {m.source !== undefined && (
+                      <p className="text-[10px] text-gray-400 mt-1">{m.source}</p>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map(m => (
-          <div key={m.id}>
+          <div
+            key={m.id}
+            ref={(el) => { if (m.log_id) msgRefs.current[m.log_id] = el }}
+          >
             <div
               className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
@@ -483,7 +577,7 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
                   className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                     m.role === 'user'
                       ? 'bg-emerald-500 text-white rounded-br-sm prose prose-sm prose-invert-thread max-w-none'
-                      : 'bg-gray-100 text-gray-800 rounded-bl-sm prose prose-sm max-w-none'
+                      : `bg-gray-100 text-gray-800 rounded-bl-sm prose prose-sm max-w-none ${highlightedId === m.log_id ? 'ring-2 ring-amber-400' : ''}`
                   }`}
                 >
                   {m.role === 'assistant' && m.images && m.images.length > 0 ? (
@@ -492,9 +586,24 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                   )}
                 </div>
-                {/* Source badge for assistant messages */}
-                {m.role === 'assistant' && m.source !== undefined && (
-                  <SourceBadge source={m.source} />
+                {/* Source badge + pin button for assistant messages */}
+                {m.role === 'assistant' && (
+                  <div className="mt-1.5 flex items-center gap-2">
+                    {m.source !== undefined && <SourceBadge source={m.source} />}
+                    {m.log_id && (
+                      <button
+                        onClick={() => togglePin(m)}
+                        className={`p-1 rounded transition-colors ${
+                          pinnedIds.has(m.log_id)
+                            ? 'text-amber-500 hover:text-amber-600'
+                            : 'text-gray-300 hover:text-amber-500'
+                        }`}
+                        title={pinnedIds.has(m.log_id) ? 'Unpin this AI answer' : 'Pin this AI answer'}
+                      >
+                        <Bookmark size={14} fill={pinnedIds.has(m.log_id) ? 'currentColor' : 'none'} />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               {m.role === 'user' && (

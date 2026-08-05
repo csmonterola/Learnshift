@@ -90,15 +90,16 @@ export function StudentPractice() {
 
     setGenerating(true)
     try {
-      const res = await studentApi.generatePractice(selectedLessonIds, questionCount)
+      const res = await studentApi.generatePractice(selectedLessonIds, questionCount, difficulty)
       setQuestions(res.data.questions || [])
       setStep('practice')
       setCurrentIndex(0)
       setSelectedOption(null)
       setIsSubmitted(false)
       setAnswers({})
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating practice:', err)
+      alert(err?.response?.data?.error || 'Failed to generate practice questions. Please try again.')
     } finally {
       setGenerating(false)
     }

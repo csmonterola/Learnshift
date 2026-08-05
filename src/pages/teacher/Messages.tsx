@@ -23,21 +23,12 @@ export function TeacherMessages() {
   const [showContactPicker, setShowContactPicker] = useState(false)
   const [contacts, setContacts] = useState<Contact[]>([])
   const [contactFilter, setContactFilter] = useState<'all' | 'students' | 'teachers'>('all')
-  const [pollingInterval, setPollingInterval] = useState<number | null>(null)
 
   useEffect(() => {
     if (user) {
       loadConversations()
     }
   }, [user])
-
-  useEffect(() => {
-    return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
-      }
-    }
-  }, [pollingInterval])
 
   const loadConversations = async () => {
     try {
@@ -79,36 +70,43 @@ export function TeacherMessages() {
     }
   }
 
-  const loadChat = async (contact: Contact) => {
+  const loadChat = (contact: Contact) => {
     setSelectedContact(contact)
     setChatMessages([])
     setShowContactPicker(false)
-    await loadMessages(Number(contact.id))
   }
 
-  const loadMessages = async (contactId: number) => {
-    try {
-      const res = await teacherApi.getMessages(contactId)
-      setChatMessages(res.data || [])
-      
-      // Start polling for new messages
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
+  // Fetch + poll messages for the selected contact.
+  // Keyed on the selected contact, so React tears down the previous loop
+  // whenever the contact changes or the page unmounts (no orphaned polling).
+  useEffect(() => {
+    if (!selectedContact) return
+    const contactId = Number(selectedContact.id)
+    let cancelled = false
+
+    const fetchMessages = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const res = await teacherApi.getMessages(contactId)
+        if (cancelled) return
+        setChatMessages(prev => {
+          const next = res.data || []
+          const prevTail = prev.length ? prev[prev.length - 1].id : null
+          const nextTail = next.length ? next[next.length - 1].id : null
+          return prevTail === nextTail ? prev : next
+        })
+      } catch (error) {
+        console.error('Error polling messages:', error)
       }
-      const interval = window.setInterval(async () => {
-        try {
-          const refreshRes = await teacherApi.getMessages(contactId)
-          setChatMessages(refreshRes.data || [])
-        } catch (error) {
-          console.error('Error polling messages:', error)
-        }
-      }, 3000) // Poll every 3 seconds
-      setPollingInterval(interval)
-    } catch (error) {
-      console.error('Error loading messages:', error)
-      setChatMessages([])
     }
-  }
+
+    fetchMessages()
+    const interval = window.setInterval(fetchMessages, 4000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [selectedContact])
 
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedContact || sending) return

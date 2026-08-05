@@ -22,12 +22,13 @@ class QuizPromptBuilder
      * @return array       Full messages array for Mistral chat completions
      */
     public function build(
-        Collection $chunks,
-        string     $lessonTitle,
-        string     $mode = 'practice',
-        int        $count = 5,
+        Collection    $chunks,
+        string        $lessonTitle,
+        string        $mode = 'practice',
+        int           $count = 5,
+        ?string       $difficulty = null,
     ): array {
-        $systemPrompt = $this->buildSystemPrompt($mode, $count);
+        $systemPrompt = $this->buildSystemPrompt($mode, $count, $difficulty);
         $imageParts = $this->buildImageContentParts($chunks);
 
         if (empty($imageParts)) {
@@ -56,7 +57,7 @@ class QuizPromptBuilder
         ];
     }
 
-    private function buildSystemPrompt(string $mode, int $count): string
+    private function buildSystemPrompt(string $mode, int $count, ?string $difficulty = null): string
     {
         $base = "You are an expert educational assessment creator for the LearnShift platform, "
               . "designed for Filipino students. "
@@ -84,6 +85,11 @@ class QuizPromptBuilder
             $base .= "\nMODE: QUIZ (ASSESSMENT)\n"
                    . "Focus on evaluating mastery. Questions should test core concepts and application.\n"
                    . "Weight towards medium and hard difficulty.\n";
+        }
+
+        if ($difficulty && in_array(strtolower($difficulty), ['easy', 'medium', 'hard'], true)) {
+            $base .= "\nDIFFICULTY TARGET: {$difficulty}\n"
+                   . "Generate ALL questions at the {$difficulty} difficulty level.\n";
         }
 
         $base .= "\nRESPONSE FORMAT (JSON array only):\n"

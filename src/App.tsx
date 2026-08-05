@@ -2,6 +2,7 @@ import React from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './components/auth/AuthContext'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
+import { ThemeProvider } from './components/theme/ThemeProvider'
 import { AIChat } from './components/AIChat'
 
 // Layouts
@@ -64,6 +65,7 @@ const Placeholder = ({ label }: { label: string }) => (
 
 export function App() {
   return (
+    <ThemeProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -134,5 +136,6 @@ export function App() {
         <AIChat />
       </BrowserRouter>
     </AuthProvider>
+    </ThemeProvider>
   )
 }

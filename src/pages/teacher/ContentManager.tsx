@@ -17,6 +17,8 @@ import {
   Loader2,
   BookOpen,
   ChevronDown,
+  Plus,
+  Pencil,
 } from 'lucide-react'
 
 interface ContentItem {
@@ -77,6 +79,8 @@ export function TeacherContentManager() {
   const [newLessonId, setNewLessonId] = useState<number | ''>('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [topicForm, setTopicForm] = useState<{ classId: number; title: string; description: string } | null>(null)
+  const [lessonForm, setLessonForm] = useState<{ classId: number; topicId: number; title: string; content: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -281,6 +285,73 @@ export function TeacherContentManager() {
         </div>
       )}
 
+      {/* Topics & Lessons Management */}
+      {lessons.length > 0 && (
+        <div className="space-y-6">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-emerald-500" /> Topics & Lessons
+          </h2>
+          {Object.entries(groupedMaterials).map(([className, topics]) => {
+            const classLessons = lessons.filter(l => l.class_name === className)
+            const classId = classLessons[0]?.class_id || materials.find(m => m.class_name === className)?.class_id
+            if (!classId) return null
+            return (
+              <div key={className} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-gray-900">{className}</h3>
+                  <button onClick={() => setTopicForm({ classId, title: '', description: '' })} className="text-sm flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100">
+                    <Plus size={14} /> Add Topic
+                  </button>
+                </div>
+                {topicForm?.classId === classId && (
+                  <div className="flex gap-2 p-3 bg-gray-50 rounded-xl">
+                    <input value={topicForm.title} onChange={e => setTopicForm({ ...topicForm, title: e.target.value })} placeholder="Topic title" className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                    <input value={topicForm.description} onChange={e => setTopicForm({ ...topicForm, description: e.target.value })} placeholder="Description (optional)" className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                    <button onClick={async () => { if (!topicForm.title.trim()) return; await teacherApi.createTopic(classId, { title: topicForm.title, description: topicForm.description }); setTopicForm(null); loadLessons() }} className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium">Save</button>
+                    <button onClick={() => setTopicForm(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm">Cancel</button>
+                  </div>
+                )}
+                <div className="space-y-3">
+                  {Object.entries(topics).map(([topicName, topicMaterials]) => {
+                    const topicLesson = classLessons.find(l => l.topic_title === topicName)
+                    const topicId = topicLesson?.id || topicMaterials[0]?.topic_id
+                    const topicLessons = lessons.filter(l => l.topic_title === topicName)
+                    return (
+                      <div key={topicName} className="border border-gray-100 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold text-gray-800 text-sm">{topicName}</h4>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setLessonForm({ classId, topicId: topicId || 0, title: '', content: '' })} className="text-xs flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">
+                              <Plus size={12} /> Add Lesson
+                            </button>
+                          </div>
+                        </div>
+                        {lessonForm?.classId === classId && lessonForm?.topicId === topicId && (
+                          <div className="flex gap-2 p-3 bg-gray-50 rounded-xl">
+                            <input value={lessonForm.title} onChange={e => setLessonForm({ ...lessonForm, title: e.target.value })} placeholder="Lesson title" className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            <button onClick={async () => { if (!lessonForm.title.trim() || !topicId) return; await teacherApi.createLesson(classId, topicId, { title: lessonForm.title, content: lessonForm.content }); setLessonForm(null); loadLessons() }} className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium">Save</button>
+                            <button onClick={() => setLessonForm(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm">Cancel</button>
+                          </div>
+                        )}
+                        {topicLessons.length > 0 && (
+                          <div className="space-y-1">
+                            {topicLessons.map(l => (
+                              <div key={l.id} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-sm">
+                                <span className="text-gray-700">{l.title}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Materials List */}
       {loading ? (
         <div className="flex items-center justify-center py-16">
@@ -348,6 +419,16 @@ export function TeacherContentManager() {
                                     <RefreshCw size={15} />
                                   </button>
                                 )}
+                                <button onClick={() => window.open(material.file_url, '_blank')}
+                                  className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                  title="View">
+                                  <Eye size={15} />
+                                </button>
+                                <button onClick={() => { const a = document.createElement('a'); a.href = material.file_url; a.download = material.file_name; a.click() }}
+                                  className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                  title="Download">
+                                  <Download size={15} />
+                                </button>
                                 <button onClick={() => handleDelete(material.id)}
                                   className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                   title="Delete">

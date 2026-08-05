@@ -38,12 +38,31 @@ interface StudentData {
     subject_name: string
     mastery_score: number
   }>
+  subject_mastery?: Array<{
+    subject_id: number
+    subject_name: string
+    mastery_score: number
+  }>
   topicProgress?: Array<{
     id: number
     topic_id: number
     status: string
     mastery_score: number
     topic?: { id: number; title: string }
+  }>
+  topic_progress?: Array<{
+    id: number
+    topic_id: number
+    status: string
+    mastery_score: number
+    topic?: { id: number; title: string }
+  }>
+  lesson_progress?: Array<{
+    id: number
+    lesson_id: number
+    lesson_title: string
+    mastery_percentage: number
+    status: string
   }>
   enrolledClasses?: Array<{
     id: number
@@ -70,8 +89,20 @@ function StudentDetailView({ student, onClose }: StudentDetailProps) {
       .finally(() => setLoading(false))
   }, [student.id])
 
+  // The detail endpoint returns the raw User model with snake_case relations
+  // (subject_mastery, topic_progress). Normalize them to the camelCase shape
+  // the modal expects, and fall back to the list-row data (overall_mastery,
+  // status) when the detail relations are empty — so the header and the
+  // progress section always read from the SAME source of truth.
+  const detailMastery = detail?.subject_mastery ?? detail?.subjectMastery ?? []
+  const detailTopicProgress = detail?.topic_progress ?? detail?.topicProgress ?? []
+  const detailLessonProgress = detail?.lesson_progress ?? []
+  const hasDetailProgress = (Array.isArray(detailMastery) && detailMastery.length > 0) ||
+    (Array.isArray(detailTopicProgress) && detailTopicProgress.length > 0) ||
+    (Array.isArray(detailLessonProgress) && detailLessonProgress.length > 0)
+
   const profile = detail?.studentProfile
-  const mastery = student.overall_mastery
+  const mastery = hasDetailProgress ? (detail?.overall_mastery ?? student.overall_mastery) : student.overall_mastery
   const masteryLevel = mastery >= 80 ? 'Excelling' : mastery >= 70 ? 'On Track' : 'At Risk'
 
   return (
@@ -133,11 +164,11 @@ function StudentDetailView({ student, onClose }: StudentDetailProps) {
           ) : (
             <>
               {/* Subject Mastery */}
-              {detail?.subjectMastery && detail.subjectMastery.length > 0 && (
+              {detailMastery.length > 0 && (
                 <div>
                   <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Subject Mastery</h3>
                   <div className="space-y-3">
-                    {detail.subjectMastery.map((sm: any) => (
+                    {detailMastery.map((sm: any) => (
                       <div key={sm.subject_id} className="flex items-center gap-4">
                         <div className="w-32 shrink-0">
                           <span className="text-sm font-medium text-slate-700">{sm.subject_name}</span>
@@ -156,11 +187,11 @@ function StudentDetailView({ student, onClose }: StudentDetailProps) {
               )}
 
               {/* Topic Progress */}
-              {detail?.topicProgress && detail.topicProgress.length > 0 && (
+              {detailTopicProgress.length > 0 && (
                 <div>
                   <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Recent Topic Progress</h3>
                   <div className="space-y-2">
-                    {detail.topicProgress.slice(0, 8).map((tp) => (
+                    {detailTopicProgress.slice(0, 8).map((tp) => (
                       <div key={tp.id} className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className={`w-2 h-2 rounded-full ${
@@ -175,8 +206,27 @@ function StudentDetailView({ student, onClose }: StudentDetailProps) {
                 </div>
               )}
 
-              {(!detail?.subjectMastery || detail.subjectMastery.length === 0) &&
-               (!detail?.topicProgress || detail.topicProgress.length === 0) && (
+              {/* Lesson Progress */}
+              {detailLessonProgress.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Lesson Progress</h3>
+                  <div className="space-y-2">
+                    {detailLessonProgress.slice(0, 8).map((lp: any) => (
+                      <div key={lp.id} className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full ${
+                            lp.status === 'completed' ? 'bg-emerald-500' : 'bg-amber-500'
+                          }`} />
+                          <span className="text-sm font-medium text-slate-700">{lp.lesson_title || `Lesson #${lp.lesson_id}`}</span>
+                        </div>
+                        <span className="text-sm font-bold text-slate-500">{lp.mastery_percentage}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {detailMastery.length === 0 && detailTopicProgress.length === 0 && detailLessonProgress.length === 0 && (
                 <div className="text-center py-8">
                   <GraduationCap className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <p className="text-slate-500">No progress data available yet.</p>

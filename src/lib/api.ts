@@ -97,8 +97,8 @@ export const studentApi = {
   skillTree: (subjectId: number, gradeLevel: string) =>
     api.get('/skill-tree', { params: { subject_id: subjectId, grade_level: gradeLevel } }),
   getPracticeClasses: () => api.get('/student/practice/classes'),
-  generatePractice: (lessonIds: number[], count?: number) =>
-    api.post('/student/practice/generate', { lesson_ids: lessonIds, count }),
+  generatePractice: (lessonIds: number[], count?: number, difficulty?: string) =>
+    api.post('/student/practice/generate', { lesson_ids: lessonIds, count, difficulty }),
   getQuestions: (topicId: number) => api.get(`/student/practice/${topicId}/questions`),
   submitPractice: (data: object) => api.post('/student/practice/submit', data),
   practiceHistory: () => api.get('/student/practice/history'),
@@ -139,6 +139,12 @@ export const studentApi = {
     api.get(`/student/lessons/${lessonId}/chat-logs`),
   chatImages: (lessonId: number, data: { image_ids: number[] }) =>
     api.post(`/student/lessons/${lessonId}/chat-images`, data),
+  pinLessonLog: (lessonId: number, logId: number) =>
+    api.post(`/student/lessons/${lessonId}/chat-logs/${logId}/pin`),
+  unpinLessonLog: (lessonId: number, logId: number) =>
+    api.delete(`/student/lessons/${lessonId}/chat-logs/${logId}/unpin`),
+  getPinnedLessonLogs: (lessonId: number) =>
+    api.get(`/student/lessons/${lessonId}/pinned-chat-logs`),
 
   // Skill Tree
   getSkillTree: (classId: number) =>
@@ -156,6 +162,11 @@ export const studentApi = {
   sendMessage: (receiverId: number, content: string) =>
     api.post('/messages', { receiver_id: receiverId, content }),
   getUnreadCount: () => api.get('/messages/unread-count'),
+  pinConversation: (otherUserId: number) => api.post(`/messages/pin/${otherUserId}`),
+  unpinConversation: (otherUserId: number) => api.post(`/messages/unpin/${otherUserId}`),
+  pinMessage: (messageId: number) => api.post(`/messages/pin-message/${messageId}`),
+  unpinMessage: (messageId: number) => api.post(`/messages/unpin-message/${messageId}`),
+  getPinnedMessages: () => api.get('/messages/pinned'),
 
   // Settings
   getSettings: () => api.get('/settings'),
@@ -197,6 +208,8 @@ export const teacherApi = {
   // Lessons
   createLesson: (classId: number, topicId: number, data: { title: string; content?: string }) =>
     api.post(`/teacher/classes/${classId}/topics/${topicId}/lessons`, data),
+  updateLesson: (classId: number, topicId: number, lessonId: number, data: { title?: string; content?: string }) =>
+    api.patch(`/teacher/classes/${classId}/topics/${topicId}/lessons/${lessonId}`, data),
   deleteLesson: (classId: number, topicId: number, lessonId: number) =>
     api.delete(`/teacher/classes/${classId}/topics/${topicId}/lessons/${lessonId}`),
 
