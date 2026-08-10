@@ -93,4 +93,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(QuizResult::class, 'student_id');
     }
+
+    public function lessonChatLogs()
+    {
+        return $this->hasMany(LessonChatLog::class, 'student_id');
+    }
 }

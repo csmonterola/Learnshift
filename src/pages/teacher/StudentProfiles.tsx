@@ -14,6 +14,10 @@ import {
   BarChart3,
   Target,
   School,
+  Award,
+  MessageSquare,
+  TrendingUp,
+  Sparkles,
 } from 'lucide-react'
 
 interface StudentData {
@@ -69,6 +73,14 @@ interface StudentData {
     name: string
     subject: string
     grade_level: string
+  }>
+  recent_activity?: Array<{
+    type: 'quiz' | 'practice' | 'lesson' | 'chat'
+    title: string
+    subject: string
+    score: number
+    detail: string
+    timestamp: string
   }>
 }
 
@@ -226,7 +238,43 @@ function StudentDetailView({ student, onClose }: StudentDetailProps) {
                 </div>
               )}
 
-              {detailMastery.length === 0 && detailTopicProgress.length === 0 && detailLessonProgress.length === 0 && (
+              {/* Recent Activity */}
+              {detail?.recent_activity && detail.recent_activity.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Recent Activity</h3>
+                  <div className="space-y-2">
+                    {detail.recent_activity.map((activity, idx) => (
+                      <div key={idx} className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3">
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                          activity.type === 'quiz' ? 'bg-blue-50 text-blue-500' :
+                          activity.type === 'practice' ? 'bg-violet-50 text-violet-500' :
+                          activity.type === 'chat' ? 'bg-purple-50 text-purple-500' :
+                          'bg-emerald-50 text-emerald-500'
+                        }`}>
+                          {activity.type === 'quiz' ? <Award className="w-4 h-4" /> :
+                           activity.type === 'practice' ? <TrendingUp className="w-4 h-4" /> :
+                           activity.type === 'chat' ? <MessageSquare className="w-4 h-4" /> :
+                           <BookOpen className="w-4 h-4" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-800 truncate">{activity.title}</p>
+                          <p className="text-xs text-slate-400 truncate">
+                            {activity.detail}{activity.subject && activity.subject !== 'Unknown Subject' ? ` · ${activity.subject}` : ''}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-sm font-bold text-slate-600">{activity.score}%</span>
+                          <p className="text-[10px] text-slate-400">
+                            {activity.timestamp ? new Date(activity.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {detailMastery.length === 0 && detailTopicProgress.length === 0 && detailLessonProgress.length === 0 && (!detail?.recent_activity || detail.recent_activity.length === 0) && (
                 <div className="text-center py-8">
                   <GraduationCap className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <p className="text-slate-500">No progress data available yet.</p>
