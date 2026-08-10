@@ -232,10 +232,10 @@ export const teacherApi = {
   deleteContent: (id: number) => api.delete(`/teacher/content/${id}`),
   reprocessContent: (id: number) => api.post(`/teacher/content/${id}/reprocess`),
   getContentLessons: (classId?: number) => api.get('/teacher/content/lessons', { params: { class_id: classId } }),
-  aiLogs: (params?: { status?: string; search?: string }) =>
+  aiLogs: (params?: { status?: string; search?: string; date_from?: string; date_to?: string; sort?: string }) =>
     api.get('/teacher/ai-logs', { params }),
   aiLogStats: () => api.get('/teacher/ai-logs/stats'),
-  updateLogStatus: (id: number, data: { status: string; teacher_note?: string; teacher_corrected_response?: string }) =>
+  updateLogStatus: (id: number, data: { status?: string; teacher_note?: string; teacher_corrected_response?: string }) =>
     api.patch(`/teacher/ai-logs/${id}/status`, data),
   chatImages: (lessonId: number, data: { image_ids: number[] }) =>
     api.post(`/teacher/lessons/${lessonId}/chat-images`, data),

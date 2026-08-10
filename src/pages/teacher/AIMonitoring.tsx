@@ -69,6 +69,14 @@ interface Stats {
   needs_review: number
 }
 
+interface AiLogFilters {
+  search?: string
+  status?: string
+  date_from?: string
+  date_to?: string
+  sort?: 'asc' | 'desc'
+}
+
 const imageCache: Record<number, ChatImage[]> = {}
 
 export function TeacherAIMonitoring() {
@@ -78,6 +86,9 @@ export function TeacherAIMonitoring() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [showStatusDropdown, setShowStatusDropdown] = useState(false)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [selectedLog, setSelectedLog] = useState<ChatLog | null>(null)
   const [editResponse, setEditResponse] = useState(false)
   const [correctedResponse, setCorrectedResponse] = useState('')
@@ -90,16 +101,22 @@ export function TeacherAIMonitoring() {
     loadData()
   }, [])
 
-  const loadData = async (searchVal?: string, statusVal?: string) => {
+  const loadData = async (overrides: AiLogFilters = {}) => {
     setLoading(true)
     try {
-      // Combine search + status filter — use the passed value if provided,
-      // otherwise fall back to the current state so both filters persist.
-      const effectiveSearch = searchVal !== undefined ? searchVal : searchSubmitted
-      const effectiveStatus = statusVal !== undefined ? statusVal : statusFilter
-      const params: { search?: string; status?: string } = {}
+      // Merge any caller-supplied filter overrides with the current state so
+      // each control can refresh independently while the others persist.
+      const params: AiLogFilters = {}
+      const effectiveSearch = overrides.search !== undefined ? overrides.search : searchSubmitted
+      const effectiveStatus = overrides.status !== undefined ? overrides.status : statusFilter
+      const effectiveFrom = overrides.date_from !== undefined ? overrides.date_from : dateFrom
+      const effectiveTo = overrides.date_to !== undefined ? overrides.date_to : dateTo
+      const effectiveSort = overrides.sort !== undefined ? overrides.sort : sortOrder
       if (effectiveSearch) params.search = effectiveSearch
       if (effectiveStatus) params.status = effectiveStatus
+      if (effectiveFrom) params.date_from = effectiveFrom
+      if (effectiveTo) params.date_to = effectiveTo
+      params.sort = effectiveSort
 
       const [logsRes, statsRes] = await Promise.all([
         teacherApi.aiLogs(Object.keys(params).length > 0 ? params : undefined),
@@ -143,13 +160,28 @@ export function TeacherAIMonitoring() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     setSearchSubmitted(search)
-    loadData(search, undefined)
+    loadData({ search })
   }
 
   const handleStatusFilter = (status: string) => {
     setStatusFilter(status)
     setShowStatusDropdown(false)
-    loadData(undefined, status)
+    loadData({ status })
+  }
+
+  const handleDateFrom = (value: string) => {
+    setDateFrom(value)
+    loadData({ date_from: value, date_to: dateTo })
+  }
+
+  const handleDateTo = (value: string) => {
+    setDateTo(value)
+    loadData({ date_from: dateFrom, date_to: value })
+  }
+
+  const handleSort = (value: 'asc' | 'desc') => {
+    setSortOrder(value)
+    loadData({ sort: value })
   }
 
   const handleDirectApprove = async (log: ChatLog) => {
@@ -168,12 +200,15 @@ export function TeacherAIMonitoring() {
     if (!selectedLog) return
     setSaving(true)
     try {
-      const payload: { status: string; teacher_note?: string; teacher_corrected_response?: string } = {
-        status: 'reviewed',
-      }
-      if (teacherNote.trim()) payload.teacher_note = teacherNote.trim()
-      if (editResponse && correctedResponse.trim() && correctedResponse !== selectedLog.response) {
-        payload.teacher_corrected_response = correctedResponse.trim()
+      // Save the corrected response text + note WITHOUT changing the log's
+      // status — Verified/Flagged are only set via the read-only quick actions.
+      const corrected = correctedResponse.trim()
+      // If the edited text equals the original AI response there is nothing to
+      // correct — send an empty value so any previously saved correction is cleared.
+      const finalCorrected = corrected !== selectedLog.response ? corrected : ''
+      const payload: { teacher_note: string; teacher_corrected_response: string } = {
+        teacher_note: teacherNote.trim(),
+        teacher_corrected_response: finalCorrected,
       }
 
       await teacherApi.updateLogStatus(selectedLog.id, payload)
@@ -189,54 +224,31 @@ export function TeacherAIMonitoring() {
     }
   }
 
-  const handleFlag = async () => {
+  const handleQuickStatus = async (status: 'verified' | 'flagged') => {
     if (!selectedLog) return
     setSaving(true)
     try {
-      const payload: { status: string; teacher_note?: string; teacher_corrected_response?: string } = {
-        status: 'flagged',
-      }
-      if (teacherNote.trim()) payload.teacher_note = teacherNote.trim()
-      if (editResponse && correctedResponse.trim() && correctedResponse !== selectedLog.response) {
-        payload.teacher_corrected_response = correctedResponse.trim()
-      }
-
-      await teacherApi.updateLogStatus(selectedLog.id, payload)
+      await teacherApi.updateLogStatus(selectedLog.id, { status })
       setSelectedLog(null)
       setEditResponse(false)
       setTeacherNote('')
       setCorrectedResponse('')
       await loadData()
     } catch (err) {
-      console.error('Error flagging log:', err)
+      console.error(`Error setting log status to ${status}:`, err)
     } finally {
       setSaving(false)
     }
   }
 
-  const handleVerify = async () => {
+  const handleEnterEdit = () => {
     if (!selectedLog) return
-    setSaving(true)
-    try {
-      const payload: { status: string; teacher_note?: string; teacher_corrected_response?: string } = {
-        status: 'verified',
-      }
-      if (teacherNote.trim()) payload.teacher_note = teacherNote.trim()
-      if (editResponse && correctedResponse.trim() && correctedResponse !== selectedLog.response) {
-        payload.teacher_corrected_response = correctedResponse.trim()
-      }
-
-      await teacherApi.updateLogStatus(selectedLog.id, payload)
-      setSelectedLog(null)
-      setEditResponse(false)
-      setTeacherNote('')
-      setCorrectedResponse('')
-      await loadData()
-    } catch (err) {
-      console.error('Error verifying log:', err)
-    } finally {
-      setSaving(false)
-    }
+    // Seed the edit textarea from the LATEST saved data (corrected response
+    // if present, otherwise the original AI response). This is the stale-data
+    // fix: previously this seeded from selectedLog.response only, clobbering
+    // any saved correction on every reopen.
+    setCorrectedResponse(selectedLog.teacher_corrected_response || selectedLog.response)
+    setEditResponse(true)
   }
 
   const loadLogImages = async (log: ChatLog): Promise<ChatImage[]> => {
@@ -276,8 +288,6 @@ export function TeacherAIMonitoring() {
         return { bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: ShieldCheck, label: 'Verified' }
       case 'flagged':
         return { bg: 'bg-red-50 text-red-700 border-red-200', icon: ShieldAlert, label: 'Flagged' }
-      case 'reviewed':
-        return { bg: 'bg-blue-50 text-blue-700 border-blue-200', icon: Eye, label: 'Reviewed' }
       default:
         return { bg: 'bg-amber-50 text-amber-700 border-amber-200', icon: ShieldAlert, label: 'Needs Review' }
     }
@@ -292,7 +302,6 @@ export function TeacherAIMonitoring() {
     { value: 'ok', label: 'Needs Review' },
     { value: 'verified', label: 'Verified' },
     { value: 'flagged', label: 'Flagged' },
-    { value: 'reviewed', label: 'Reviewed' },
   ]
 
   return (
@@ -336,8 +345,8 @@ export function TeacherAIMonitoring() {
       )}
 
       {/* Search & Filter */}
-      <div className="flex gap-4">
-        <form onSubmit={handleSearch} className="relative flex-1">
+      <div className="flex flex-wrap items-center gap-4">
+        <form onSubmit={handleSearch} className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
@@ -372,6 +381,35 @@ export function TeacherAIMonitoring() {
             </div>
           )}
         </div>
+        {/* Date range filter */}
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={e => handleDateFrom(e.target.value)}
+            title="From date"
+            className="px-3 py-3 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 shadow-sm focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 outline-none"
+          />
+          <span className="text-xs text-gray-400">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={e => handleDateTo(e.target.value)}
+            title="To date"
+            className="px-3 py-3 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 shadow-sm focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 outline-none"
+          />
+        </div>
+        {/* Sort order */}
+        <select
+          value={sortOrder}
+          onChange={e => handleSort(e.target.value as 'asc' | 'desc')}
+          className="px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 outline-none"
+        >
+          <option value="desc">Newest first</option>
+          <option value="asc">Oldest first</option>
+        </select>
       </div>
 
       {/* Logs List */}
@@ -534,6 +572,7 @@ export function TeacherAIMonitoring() {
             className="bg-white rounded-3xl w-full max-w-2xl p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-gray-900">Review AI Response</h2>
+              {/* The X in the top-right is the only close control in both views */}
               <button onClick={() => { setSelectedLog(null); setEditResponse(false) }} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                 <X className="w-5 h-5" />
               </button>
@@ -551,17 +590,9 @@ export function TeacherAIMonitoring() {
             <div className="mb-4">
               <div className="flex items-center justify-between mb-1">
                 <div className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">AI Response</div>
-                <button
-                  onClick={() => {
-                    setEditResponse(!editResponse)
-                    if (!editResponse) setCorrectedResponse(selectedLog.response)
-                  }}
-                  className={`text-xs font-medium flex items-center gap-1 px-2 py-1 rounded-lg transition-colors ${
-                    editResponse ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500 hover:bg-gray-100'
-                  }`}
-                >
-                  <FileEdit size={12} /> {editResponse ? 'Cancel Edit' : 'Edit'}
-                </button>
+                {!editResponse && selectedLog.teacher_corrected_response && (
+                  <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-200 rounded text-[8px] font-bold">EDITED</span>
+                )}
               </div>
               {editResponse ? (
                 <textarea
@@ -570,16 +601,16 @@ export function TeacherAIMonitoring() {
                   className="w-full min-h-[120px] px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   placeholder="Edit the AI response if needed..."
                 />
-                ) : (
-                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 text-sm leading-relaxed prose prose-sm max-w-none">
-                    {selectedLog && (
-                      <InlineImageRenderer
-                        content={selectedLog.response}
-                        images={(logImages[selectedLog.lesson_id]?.length ? logImages[selectedLog.lesson_id] : (imageCache[selectedLog.lesson_id] || [])) as ChatImage[]}
-                      />
-                    )}
-                  </div>
-                )}
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 text-sm leading-relaxed prose prose-sm max-w-none">
+                  {/* Stale-data fix: render the LATEST saved text (corrected response
+                      if one exists, otherwise the original), not just the original. */}
+                  <InlineImageRenderer
+                    content={selectedLog.teacher_corrected_response || selectedLog.response}
+                    images={(logImages[selectedLog.lesson_id]?.length ? logImages[selectedLog.lesson_id] : (imageCache[selectedLog.lesson_id] || [])) as ChatImage[]}
+                  />
+                </div>
+              )}
               {editResponse && (
                 <p className="text-xs text-amber-600 mt-1">
                   The edited version will be shown to the student. The original AI response is preserved.
@@ -592,46 +623,73 @@ export function TeacherAIMonitoring() {
               <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
                 Your Note (visible to student)
               </label>
-              <textarea
-                value={teacherNote}
-                onChange={e => setTeacherNote(e.target.value)}
-                className="w-full min-h-[80px] px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                placeholder="Add a note to the student about this response..."
-              />
+              {editResponse ? (
+                <textarea
+                  value={teacherNote}
+                  onChange={e => setTeacherNote(e.target.value)}
+                  className="w-full min-h-[80px] px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  placeholder="Add a note to the student about this response..."
+                />
+              ) : selectedLog.teacher_note ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <p className="text-sm text-amber-800">{selectedLog.teacher_note}</p>
+                  {selectedLog.reviewer && (
+                    <p className="text-xs text-amber-500 mt-1">— {selectedLog.reviewer.name}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">No note added yet.</p>
+              )}
             </div>
 
-            {/* Actions - sticky footer with consistent sizing */}
+            {/* Actions */}
             <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-100">
-              <button
-                onClick={() => { setSelectedLog(null); setEditResponse(false) }}
-                className="h-11 px-5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveReview}
-                disabled={saving}
-                className="h-11 px-5 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye size={16} />}
-                Save Review
-              </button>
-              <button
-                onClick={handleFlag}
-                disabled={saving}
-                className="h-11 px-5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag size={16} />}
-                Flag as Wrong
-              </button>
-              <button
-                onClick={handleVerify}
-                disabled={saving}
-                className="h-11 px-5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check size={16} />}
-                Approve
-              </button>
+              {editResponse ? (
+                <>
+                  {/* Cancel Edit discards changes and returns to read-only view */}
+                  <button
+                    onClick={() => setEditResponse(false)}
+                    className="h-11 px-5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition-colors"
+                  >
+                    Cancel Edit
+                  </button>
+                  <button
+                    onClick={handleSaveReview}
+                    disabled={saving}
+                    className="h-11 px-5 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye size={16} />}
+                    Save Review
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Read-only quick actions: status is set without entering edit mode.
+                      Save Review (edit mode) never changes status. */}
+                  <button
+                    onClick={handleEnterEdit}
+                    className="h-11 px-5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition-colors flex items-center gap-2"
+                  >
+                    <FileEdit size={16} /> Edit
+                  </button>
+                  <button
+                    onClick={() => handleQuickStatus('flagged')}
+                    disabled={saving}
+                    className="h-11 px-5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag size={16} />}
+                    Flag
+                  </button>
+                  <button
+                    onClick={() => handleQuickStatus('verified')}
+                    disabled={saving}
+                    className="h-11 px-5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check size={16} />}
+                    Verified
+                  </button>
+                </>
+              )}
             </div>
           </motion.div>
         </div>

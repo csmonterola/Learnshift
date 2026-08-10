@@ -45,7 +45,9 @@ class AIMonitoringController extends Controller
                       ->orWhereHas('lesson.topic.schoolClass', fn($q) => $q->whereRaw('LOWER(subject) LIKE ?', ["%{$lower}%"]));
                 });
             })
-            ->latest()
+            ->when($request->date_from, fn($q) => $q->whereDate('created_at', '>=', $request->date_from))
+            ->when($request->date_to, fn($q) => $q->whereDate('created_at', '<=', $request->date_to))
+            ->when($request->sort === 'asc', fn($q) => $q->oldest(), fn($q) => $q->latest())
             ->paginate(20);
 
         return response()->json($logs);
@@ -54,22 +56,33 @@ class AIMonitoringController extends Controller
     /**
      * PATCH /api/teacher/ai-logs/{log}/status
      * Update the review status, teacher note, or corrected response.
+     *
+     * `status` is optional so a teacher can save an edited response / note
+     * ("Save Review") without changing the log's existing Verified/Flagged
+     * status. Only the two review outcomes remain: verified | flagged.
      */
     public function updateStatus(Request $request, LessonChatLog $log)
     {
         $request->validate([
-            'status'                    => 'required|in:ok,flagged,reviewed,verified',
-            'teacher_note'              => 'nullable|string|max:2000',
+            'status'                     => 'sometimes|in:ok,flagged,verified',
+            'teacher_note'               => 'nullable|string|max:2000',
             'teacher_corrected_response' => 'nullable|string|max:10000',
         ]);
 
-        $log->update([
-            'status'                     => $request->status,
-            'teacher_note'               => $request->teacher_note,
-            'teacher_corrected_response' => $request->teacher_corrected_response,
-            'reviewed_by'                => $request->user()->id,
-            'reviewed_at'                => now(),
-        ]);
+        $data = [];
+        if ($request->has('status')) {
+            $data['status'] = $request->status;
+        }
+        if ($request->has('teacher_note')) {
+            $data['teacher_note'] = $request->teacher_note;
+        }
+        if ($request->has('teacher_corrected_response')) {
+            $data['teacher_corrected_response'] = $request->teacher_corrected_response;
+        }
+        $data['reviewed_by'] = $request->user()->id;
+        $data['reviewed_at'] = now();
+
+        $log->update($data);
 
         return response()->json(
             $log->load([
@@ -136,7 +149,7 @@ class AIMonitoringController extends Controller
         $total = LessonChatLog::whereIn('lesson_id', $lessonIds)->count();
         $verified = LessonChatLog::whereIn('lesson_id', $lessonIds)->where('status', 'verified')->count();
         $flagged = LessonChatLog::whereIn('lesson_id', $lessonIds)->where('status', 'flagged')->count();
-        $needsReview = LessonChatLog::whereIn('lesson_id', $lessonIds)->whereIn('status', ['ok', 'reviewed'])->count();
+        $needsReview = LessonChatLog::whereIn('lesson_id', $lessonIds)->where('status', 'ok')->count();
 
         return response()->json([
             'total_interactions' => $total,
