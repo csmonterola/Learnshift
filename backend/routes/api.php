@@ -106,7 +106,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('classes/{classId}/topics/{topicId}/lessons/{lessonId}/materials',            [TeacherTopicController::class, 'storeMaterial']);
         Route::delete('classes/{classId}/topics/{topicId}/lessons/{lessonId}/materials/{materialId}', [TeacherTopicController::class, 'destroyMaterial']);
         Route::post('classes/{classId}/topics/{topicId}/lessons/{lessonId}/links',                [TeacherTopicController::class, 'storeLink']);
-        Route::apiResource('content', TeacherContentController::class)->except(['show']);
+        Route::apiResource('content', TeacherContentController::class)
+            ->parameters(['content' => 'material'])
+            ->except(['show']);
         Route::post('content/{material}/reprocess', [TeacherContentController::class, 'reprocess']);
         Route::get('content/lessons', [TeacherContentController::class, 'lessons']);
         Route::get('ai-logs',                             [AIMonitoringController::class, 'index']);

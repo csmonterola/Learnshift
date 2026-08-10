@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Api\Teacher;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\LearningMaterial;
+use App\Models\LessonEmbedding;
 use App\Services\Rag\MaterialIngestionService;
 use App\Services\Storage\StorageConfigurationValidator;
 use App\Exceptions\TextExtractionException;
 use App\Exceptions\EmbeddingException;
+use App\Jobs\IngestLearningMaterialJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +36,8 @@ class ContentController extends Controller
                 return [
                     'id'               => $material->id,
                     'title'            => $material->title,
+                    'description'      => $material->description,
+                    'tags'             => $material->tags,
                     'file_name'        => $material->file_name,
                     'file_type'        => $material->file_type,
                     'file_size'        => $material->file_size,
@@ -226,13 +230,124 @@ class ContentController extends Controller
         }
     }
 
+    /**
+     * PUT /api/teacher/content/{material}
+     * Update metadata (title, description, tags, lesson) and optionally
+     * replace the underlying file.
+     */
     public function update(Request $request, LearningMaterial $material)
     {
         if ($material->teacher_id !== $request->user()->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $material->update($request->only(['title', 'lesson_id']));
+        $request->validate([
+            'title'       => 'required|string|max:255',
+            'description' => 'nullable|string|max:5000',
+            'tags'        => 'nullable|array',
+            'tags.*'      => 'string|max:50',
+            'lesson_id'   => 'nullable|exists:lessons,id',
+            'file'        => 'nullable|file|mimes:pdf,docx,pptx,doc,ppt,txt|max:51200',
+        ]);
+
+        // Verify the teacher owns the lesson they are assigning the material to.
+        if (!empty($request->lesson_id)) {
+            $lesson = $this->verifyLessonOwnership($request->lesson_id, $request->user()->id);
+            if (!$lesson) {
+                return response()->json(['message' => 'Lesson not found or unauthorized access.'], 403);
+            }
+        }
+
+        $data = [
+            'title'       => $request->title,
+            'description' => $request->description,
+            'tags'        => $request->tags,
+        ];
+
+        if ($request->has('lesson_id')) {
+            $data['lesson_id'] = $request->lesson_id ? (int) $request->lesson_id : null;
+        }
+
+        $fileReplaced = $request->hasFile('file');
+
+        if ($fileReplaced) {
+            // Validate storage configuration before attempting upload (same as store()).
+            $configValidation = $this->storageValidator->validateCurrentConfig('public');
+            if (!$configValidation['valid']) {
+                Log::error('Storage configuration validation failed during content replacement', [
+                    'errors'         => $configValidation['errors'],
+                    'credential_type' => $configValidation['credential_type'],
+                    'material_id'    => $material->id,
+                    'user_id'        => $request->user()->id,
+                ]);
+
+                return response()->json([
+                    'message' => 'Storage system not properly configured',
+                    'error'   => 'Unable to upload files due to authentication configuration issues. Please contact support.',
+                    'technical_details' => config('app.debug') ? [
+                        'errors'          => $configValidation['errors'],
+                        'credential_type' => $configValidation['credential_type'],
+                    ] : null,
+                ], 500);
+            }
+
+            $file = $request->file('file');
+            $uploadContext = [
+                'lesson_id' => $material->lesson_id,
+                'filename'  => $file->getClientOriginalName(),
+                'file_size' => $file->getSize(),
+                'file_type' => $file->getClientOriginalExtension(),
+                'user_id'   => $request->user()->id,
+            ];
+
+            try {
+                $storagePath = $this->storeReplacementFile($file, $material->lesson_id, $request->user()->id);
+
+                // Remove the previous file from storage (unless it was an external link).
+                if ($material->file_type !== 'LINK' && $material->file_path) {
+                    Storage::disk('public')->delete($material->file_path);
+                }
+
+                // A new file means any previously extracted embeddings are stale.
+                LessonEmbedding::where('material_id', $material->id)->delete();
+
+                $fileType = strtoupper($file->getClientOriginalExtension());
+                $data = array_merge($data, [
+                    'file_path'        => $storagePath,
+                    'file_name'        => $file->getClientOriginalName(),
+                    'file_type'        => $fileType,
+                    'file_size'        => $file->getSize(),
+                    'ai_sync'          => in_array($fileType, ['PDF', 'DOCX', 'PPTX']),
+                    'ingestion_status' => 'pending',
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Content replacement file upload failed', array_merge($uploadContext, [
+                    'material_id' => $material->id,
+                    'error'       => $e->getMessage(),
+                    'trace'       => config('app.debug') ? $e->getTraceAsString() : null,
+                ]));
+                return $this->handleUploadError($e, $uploadContext);
+            }
+        }
+
+        if ($fileReplaced) {
+            // Replacing a file rewrites the stored object, so handle every
+            // side effect here explicitly and suppress model events during the
+            // update. LearningMaterialObserver::updated() otherwise re-dispatches
+            // (and recursively re-updates) when file_path changes on a material
+            // that isn't already 'indexed', which loops until memory runs out.
+            LearningMaterial::withoutEvents(fn () => $material->update($data));
+
+            // Mirror store()'s behavior: a replaced file re-enters the RAG
+            // ingestion pipeline instead of sitting at "pending" until a
+            // teacher manually clicks Reprocess.
+            if ($material->ai_sync && $material->lesson_id) {
+                IngestLearningMaterialJob::dispatch($material->id);
+            }
+        } else {
+            $material->update($data);
+        }
+
         return response()->json($material->load(['lesson.topic.schoolClass', 'subject']));
     }
 
@@ -333,6 +448,54 @@ class ContentController extends Controller
             ->where('classes.teacher_id', $teacherId)
             ->select('lessons.id', 'lessons.title')
             ->first();
+    }
+
+    /**
+     * Upload a replacement file for an existing material, mirroring the exact
+     * upload + verification path used by store().
+     *
+     * @param \Illuminate\Http\UploadedFile $file
+     * @param int|null $lessonId
+     * @param int $userId
+     * @return string The storage path of the newly stored file.
+     */
+    private function storeReplacementFile($file, ?int $lessonId, int $userId): string
+    {
+        $lessonDir = $lessonId ? "lessons/{$lessonId}" : 'lessons/unassigned';
+        $fileName = Str::uuid() . '.' . $file->getClientOriginalExtension();
+        $filePath = "{$lessonDir}/materials/{$fileName}";
+
+        $storagePath = Storage::disk('public')->putFileAs(
+            dirname($filePath),
+            $file,
+            basename($filePath)
+        );
+
+        if (!$storagePath) {
+            throw new \RuntimeException('Storage operation returned false - upload may have failed due to insufficient storage space or permissions');
+        }
+
+        // Verify upload success immediately after upload.
+        if (!Storage::disk('public')->exists($storagePath)) {
+            Storage::disk('public')->delete($storagePath);
+            throw new \RuntimeException('File upload verification failed - file not found after upload. This may indicate storage authentication issues.');
+        }
+
+        // Generate URL and verify accessibility.
+        $uploadResult = $this->verifyUploadAndGenerateUrl($storagePath, [
+            'lesson_id' => $lessonId,
+            'filename'  => $file->getClientOriginalName(),
+            'file_size' => $file->getSize(),
+            'file_type' => $file->getClientOriginalExtension(),
+            'user_id'   => $userId,
+        ]);
+
+        if (!$uploadResult['success']) {
+            Storage::disk('public')->delete($storagePath);
+            throw new \RuntimeException($uploadResult['error']);
+        }
+
+        return $storagePath;
     }
 
     /**

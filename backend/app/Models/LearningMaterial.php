@@ -14,11 +14,14 @@ class LearningMaterial extends Model
 
     protected $fillable = [
         'teacher_id', 'subject_id', 'topic_id', 'lesson_id',
-        'title', 'file_path', 'file_name', 'file_type', 'file_size', 'ai_sync',
+        'title', 'description', 'tags', 'file_path', 'file_name', 'file_type', 'file_size', 'ai_sync',
         'ingestion_status',
     ];
 
-    protected $casts = ['ai_sync' => 'boolean'];
+    protected $casts = [
+        'ai_sync' => 'boolean',
+        'tags'    => 'array',
+    ];
 
     public function teacher()
     {

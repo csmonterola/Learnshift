@@ -228,7 +228,20 @@ export const teacherApi = {
   content: () => api.get('/teacher/content'),
   uploadContent: (formData: FormData) =>
     api.post('/teacher/content', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
-  updateContent: (id: number, data: object) => api.put(`/teacher/content/${id}`, data),
+  updateContent: (id: number, data: { title: string; lesson_id?: number | null; description?: string; tags?: string[]; file?: File }) => {
+    if (data.file) {
+      const formData = new FormData()
+      formData.append('title', data.title)
+      if (data.lesson_id !== undefined && data.lesson_id !== null) formData.append('lesson_id', String(data.lesson_id))
+      if (data.description !== undefined) formData.append('description', data.description)
+      if (data.tags && data.tags.length > 0) {
+        data.tags.forEach(tag => formData.append('tags[]', tag))
+      }
+      formData.append('file', data.file)
+      return api.put(`/teacher/content/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+    }
+    return api.put(`/teacher/content/${id}`, data)
+  },
   deleteContent: (id: number) => api.delete(`/teacher/content/${id}`),
   reprocessContent: (id: number) => api.post(`/teacher/content/${id}/reprocess`),
   getContentLessons: (classId?: number) => api.get('/teacher/content/lessons', { params: { class_id: classId } }),
