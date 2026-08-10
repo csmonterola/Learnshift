@@ -98,4 +98,14 @@ class User extends Authenticatable
     {
         return $this->hasMany(LessonChatLog::class, 'student_id');
     }
+
+    public function classPosts()
+    {
+        return $this->hasMany(ClassPost::class, 'author_id');
+    }
+
+    public function postComments()
+    {
+        return $this->hasMany(PostComment::class);
+    }
 }

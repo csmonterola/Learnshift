@@ -12,8 +12,10 @@ use App\Http\Controllers\Api\Teacher\AIMonitoringController;
 use App\Http\Controllers\Api\Teacher\LessonChatLogController;
 use App\Http\Controllers\Api\Teacher\TopicController as TeacherTopicController;
 use App\Http\Controllers\Api\Teacher\TeacherClassController;
+use App\Http\Controllers\Api\Teacher\ClassPostController as TeacherClassPostController;
 use App\Http\Controllers\Api\Student\DashboardController as StudentDashboardController;
 use App\Http\Controllers\Api\Student\ClassController as StudentClassController;
+use App\Http\Controllers\Api\Student\ClassPostController as StudentClassPostController;
 use App\Http\Controllers\Api\Student\PracticeController;
 use App\Http\Controllers\Api\Student\DiagnosticController;
 use App\Http\Controllers\Api\Student\ChatbotController;
@@ -123,6 +125,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('classes/{classId}/progress',          [ClassProgressController::class, 'index']);
         Route::get('classes/{classId}/progress/topics/{topicId}', [ClassProgressController::class, 'topicDetail']);
 
+        // Class Posts
+        Route::get('classes/{classId}/posts',             [TeacherClassPostController::class, 'index']);
+        Route::post('classes/{classId}/posts',            [TeacherClassPostController::class, 'store']);
+        Route::put('classes/{classId}/posts/{postId}',    [TeacherClassPostController::class, 'update']);
+        Route::delete('classes/{classId}/posts/{postId}', [TeacherClassPostController::class, 'destroy']);
+        Route::post('classes/{classId}/posts/{postId}/comments', [TeacherClassPostController::class, 'comment']);
+
         // Contacts
         Route::get('contacts',                            [TeacherContactController::class, 'index']);
     });
@@ -145,6 +154,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('classes/{classId}/topics',            [StudentClassController::class, 'topics']);
         Route::get('classes/{classId}/topics/{topicId}',  [StudentClassController::class, 'topic']);
         Route::get('classes/{classId}/topics/{topicId}/lessons/{lessonId}', [StudentClassController::class, 'lesson']);
+
+        // Class Posts
+        Route::get('classes/{classId}/posts',             [StudentClassPostController::class, 'index']);
+        Route::post('classes/{classId}/posts/{postId}/comments', [StudentClassPostController::class, 'comment']);
 
         Route::get('practice/classes',                    [PracticeController::class, 'classes']);
         Route::post('practice/generate',                  [PracticeController::class, 'generate']);

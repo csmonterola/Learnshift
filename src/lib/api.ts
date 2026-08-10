@@ -150,6 +150,12 @@ export const studentApi = {
   getSkillTree: (classId: number) =>
     api.get(`/student/classes/${classId}/skill-tree`),
 
+  // Class Posts
+  getClassPosts: (classId: number) =>
+    api.get(`/student/classes/${classId}/posts`),
+  addClassPostComment: (classId: number, postId: number, body: string) =>
+    api.post(`/student/classes/${classId}/posts/${postId}/comments`, { body }),
+
   // Progress
   getProgress: () => api.get('/student/progress'),
 
@@ -261,6 +267,18 @@ export const teacherApi = {
     api.get(`/teacher/classes/${classId}/progress`),
   getTopicProgress: (classId: number, topicId: number) =>
     api.get(`/teacher/classes/${classId}/progress/topics/${topicId}`),
+
+  // Class Posts
+  getClassPosts: (classId: number) =>
+    api.get(`/teacher/classes/${classId}/posts`),
+  createClassPost: (classId: number, data: { title: string; body: string; status?: string; scheduled_at?: string | null }) =>
+    api.post(`/teacher/classes/${classId}/posts`, data),
+  updateClassPost: (classId: number, postId: number, data: { title?: string; body?: string; status?: string; scheduled_at?: string | null }) =>
+    api.put(`/teacher/classes/${classId}/posts/${postId}`, data),
+  deleteClassPost: (classId: number, postId: number) =>
+    api.delete(`/teacher/classes/${classId}/posts/${postId}`),
+  addClassPostComment: (classId: number, postId: number, body: string) =>
+    api.post(`/teacher/classes/${classId}/posts/${postId}/comments`, { body }),
 
   // Contacts
   getContacts: () => api.get('/teacher/contacts'),

@@ -4,10 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../../components/auth/AuthContext'
 import { teacherApi } from '../../lib/api'
 import ClassProgress from './ClassProgress'
+import ClassPosts from '../../components/class/ClassPosts'
 import {
   ChevronRight, Plus, FileText, Trash2, BookOpen,
   Users, Upload, Link2, X, ChevronDown, ChevronUp, Paperclip,
-  Eye, Download, Image, Film, File, BarChart3,
+  Eye, Download, Image, Film, File, BarChart3, Megaphone,
 } from 'lucide-react'
 
 interface ClassData {
@@ -53,7 +54,7 @@ export function TeacherClassDetail() {
   const [classData, setClassData] = useState<ClassData | null>(null)
   const [classTopics, setClassTopics] = useState<TopicItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeView, setActiveView] = useState<'content' | 'progress'>('content')
+  const [activeView, setActiveView] = useState<'content' | 'progress' | 'posts'>('content')
 
   // Expanded lessons per topic
   const [expandedTopics, setExpandedTopics] = useState<Set<number>>(new Set())
@@ -244,6 +245,7 @@ export function TeacherClassDetail() {
 
   const viewTabs = [
     { id: 'content' as const, label: 'Content', icon: BookOpen },
+    { id: 'posts' as const, label: 'Posts', icon: Megaphone },
     { id: 'progress' as const, label: 'Progress', icon: BarChart3 },
   ]
 
@@ -430,6 +432,9 @@ export function TeacherClassDetail() {
           )}
         </>
       )}
+
+      {/* ── Posts View ─────────────────────────────────────────── */}
+      {activeView === 'posts' && <ClassPosts classId={id} role="teacher" />}
 
       {/* ── Progress View ──────────────────────────────────────── */}
       {activeView === 'progress' && <ClassProgress classId={id} />}

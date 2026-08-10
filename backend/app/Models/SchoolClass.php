@@ -33,4 +33,9 @@ class SchoolClass extends Model
     {
         return $this->hasMany(Topic::class, 'class_id')->orderBy('order_index');
     }
+
+    public function posts()
+    {
+        return $this->hasMany(ClassPost::class, 'class_id');
+    }
 }

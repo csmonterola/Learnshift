@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { studentApi } from '../../lib/api'
-import { BookOpen, ChevronRight, FileText, CheckCircle, Trophy } from 'lucide-react'
+import ClassPosts from '../../components/class/ClassPosts'
+import { BookOpen, ChevronRight, FileText, CheckCircle, Trophy, Megaphone } from 'lucide-react'
 
 interface ClassData {
   id: number; name: string; grade_level: string; section: string;
@@ -21,6 +22,7 @@ export function StudentClassPage() {
   const [classData, setClassData] = useState<ClassData | null>(null)
   const [classTopics, setClassTopics] = useState<TopicItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'topics' | 'posts'>('topics')
 
   useEffect(() => {
     if (!classId) return
@@ -86,8 +88,29 @@ export function StudentClassPage() {
         </div>
       )}
 
+      {/* View tabs */}
+      <div className="flex items-center gap-1 mb-6 border-b border-gray-200">
+        {([
+          { id: 'topics' as const, label: 'Topics', icon: BookOpen },
+          { id: 'posts' as const, label: 'Posts', icon: Megaphone },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-5 py-3 text-sm font-bold transition-all border-b-2 ${
+              activeTab === tab.id
+                ? 'border-emerald-500 text-emerald-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Topics */}
-      {classTopics.length === 0 ? (
+      {activeTab === 'topics' && (classTopics.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
           <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-gray-900 mb-2">No Topics Yet</h3>
@@ -160,6 +183,11 @@ export function StudentClassPage() {
             </motion.div>
           ))}
         </div>
+      ))}
+
+      {/* Posts */}
+      {activeTab === 'posts' && (
+        <ClassPosts classId={Number(classId)} role="student" />
       )}
     </div>
   )
