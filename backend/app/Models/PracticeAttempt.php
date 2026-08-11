@@ -11,10 +11,10 @@ class PracticeAttempt extends Model
 
     protected $fillable = [
         'student_id', 'topic_id', 'score',
-        'total_questions', 'correct_answers', 'answers', 'time_spent_seconds',
+        'total_questions', 'correct_answers', 'answers', 'question_meta', 'time_spent_seconds',
     ];
 
-    protected $casts = ['answers' => 'array'];
+    protected $casts = ['answers' => 'array', 'question_meta' => 'array'];
 
     public function student()
     {

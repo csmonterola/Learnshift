@@ -12,11 +12,13 @@ class StudentProfile extends Model
     protected $fillable = [
         'student_id', 'grade_level', 'section', 'total_xp',
         'streak_days', 'last_active_date', 'diagnostic_score', 'diagnostic_completed',
+        'learning_profile',
     ];
 
     protected $casts = [
         'last_active_date'       => 'date',
         'diagnostic_completed'   => 'boolean',
+        'learning_profile'       => 'array',
     ];
 
     public function student()

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\AnonymousQuestion;
 use App\Models\ChatbotLog;
 use App\Services\Ai\AiProviderFactory;
+use App\Services\Learning\LearningProfileService;
+use App\Services\Rag\RagPromptBuilder;
 use Illuminate\Http\Request;
 
 class ChatbotController extends Controller
@@ -35,13 +37,25 @@ class ChatbotController extends Controller
             ->values()
             ->toArray();
 
+        // Resolve the learner profile so the tutor adapts explanation depth,
+        // pacing, help stance, and tone to this student's demonstrated traits.
+        $profile = app(LearningProfileService::class)->analyze($request->user());
+        $profileBlock = RagPromptBuilder::profileBlock($profile);
+
+        $systemContent = 'You are a helpful educational AI assistant for LearnShift, a learning platform for Filipino students. '.
+                         'Help students understand their lessons, answer subject-related questions, and provide clear explanations. '.
+                         'Be friendly, encouraging, and educational. Keep responses concise and easy to understand.';
+
+        // Additive only — never strips the existing prompt.
+        if ($profileBlock !== '') {
+            $systemContent .= "\n\n" . $profileBlock;
+        }
+
         $messages = array_merge(
             [
                 [
                     'role' => 'system',
-                    'content' => 'You are a helpful educational AI assistant for LearnShift, a learning platform for Filipino students. '.
-                                 'Help students understand their lessons, answer subject-related questions, and provide clear explanations. '.
-                                 'Be friendly, encouraging, and educational. Keep responses concise and easy to understand.',
+                    'content' => $systemContent,
                 ],
             ],
             $history,

@@ -18,6 +18,8 @@ class RagPromptBuilder
      *    page numbers, so the AI knows what visual content exists even if the
      *    image embedding didn't match the question semantically.
      * 3. Instructions to reference images using [Image: page N] markers.
+     * 4. An optional LEARNER PROFILE block (when a profile is provided) so the
+     *    tutor adapts explanation depth, pacing, help stance, and tone.
      *
      * The user message only includes actual image_url data for the top-5
      * semantically relevant images (to conserve tokens and cost).
@@ -27,6 +29,7 @@ class RagPromptBuilder
      * @param  string      $question  The student's current question
      * @param  string      $source    One of: 'lesson_materials' | 'mixed' | 'general'
      * @param  Collection|null $allImages All extracted images for this material
+     * @param  array|null  $profile   Full LearningProfileService::analyze() result
      * @return array       Full messages array: [system, ...history pairs, user]
      */
     public function build(
@@ -35,8 +38,16 @@ class RagPromptBuilder
         string     $question,
         string     $source = 'general',
         ?Collection $allImages = null,
+        ?array      $profile = null,
     ): array {
         $systemContent = $this->buildSystemPrompt($chunks, $source, $allImages);
+
+        // Append the learner profile block (if any trait has data) so the
+        // tutor adapts to the student's demonstrated learning preferences.
+        $profileBlock = self::profileBlock($profile);
+        if ($profileBlock !== '') {
+            $systemContent .= "\n\n" . $profileBlock;
+        }
 
         $messages = [['role' => 'system', 'content' => $systemContent]];
 
@@ -225,5 +236,82 @@ class RagPromptBuilder
         }
 
         return $parts;
+    }
+
+    /**
+     * Build the LEARNER PROFILE block appended to the system prompt so the
+     * tutor adapts to the student's demonstrated learning preferences.
+     *
+     * Additive only — never strips existing prompt content. Returns '' when
+     * no trait has a source (cold-start), so the prompt is unchanged.
+     *
+     * @param  array|null  $profile  Full LearningProfileService::analyze() result
+     */
+    public static function profileBlock(?array $profile): string
+    {
+        if ($profile === null) {
+            return '';
+        }
+
+        $traits = $profile['traits'] ?? [];
+        $lines = [];
+
+        // Explanation depth / scaffolding from difficulty appetite + mastery habit.
+        $appetite = $traits['difficulty_appetite']['value'] ?? null;
+        if ($appetite !== null) {
+            $lines[] = $appetite >= 0.33
+                ? '- This student prefers challenging material. Use precise, rigorous explanations and avoid over-simplifying.'
+                : ($appetite <= -0.33
+                    ? '- This student prefers easier material. Break explanations into small, gentle steps and check understanding frequently.'
+                    : '- This student is comfortable with a moderate difficulty level. Balance clarity with some depth.');
+        }
+
+        $mastery = $traits['mastery_habit']['value'] ?? null;
+        if ($mastery !== null) {
+            $lines[] = $mastery >= 0.33
+                ? '- This student tends to retry until mastery. Encourage persistence and point out that revisiting is a strength.'
+                : ($mastery <= -0.33
+                    ? '- This student tends to move on after one attempt. Offer concise, high-value explanations and suggest a quick review when useful.'
+                    : '- This student has a balanced mastery habit. Offer review opportunities without pushing.');
+        }
+
+        // Proactive-help stance from help seeking.
+        $help = $traits['help_seeking']['value'] ?? null;
+        if ($help !== null) {
+            $lines[] = $help >= 0.33
+                ? '- This student readily asks for help. Proactively offer assistance and invite follow-up questions.'
+                : ($help <= -0.33
+                    ? '- This student is self-reliant and rarely asks for help. Do not over-offer assistance; let them drive, but be ready when they ask.'
+                    : '- This student asks for help when needed. Offer assistance naturally without being pushy.');
+        }
+
+        // Information pacing from pacing.
+        $pacing = $traits['pacing']['value'] ?? null;
+        if ($pacing !== null) {
+            $lines[] = $pacing >= 0.33
+                ? '- This student works quickly. Keep responses efficient and get to the point fast.'
+                : ($pacing <= -0.33
+                    ? '- This student works deliberately. Take time to explain thoroughly and avoid rushing.'
+                    : '- This student works at a moderate pace. Match a steady, clear rhythm.');
+        }
+
+        // Encouragement tone from study regularity.
+        $regularity = $traits['study_regularity']['value'] ?? null;
+        if ($regularity !== null) {
+            $lines[] = $regularity >= 0.33
+                ? '- This student studies consistently. Reinforce their steady progress with positive, affirming language.'
+                : ($regularity <= -0.33
+                    ? '- This student studies sporadically. Use warm, encouraging language that makes returning to study feel low-pressure and rewarding.'
+                    : '- This student studies fairly regularly. Use balanced, supportive encouragement.');
+        }
+
+        if ($lines === []) {
+            return '';
+        }
+
+        return "=== LEARNER PROFILE ===\n"
+            . "Adapt your tutoring to this student's demonstrated learning profile:\n"
+            . implode("\n", $lines)
+            . "\n================================";
     }
 }

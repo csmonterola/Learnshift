@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { CheckCircle, XCircle, ChevronRight, RefreshCw, PlayCircle, BookOpen, GraduationCap, Settings, Brain, BarChart3, Loader2, ArrowLeft, ChevronLeft } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { CheckCircle, XCircle, ChevronRight, RefreshCw, PlayCircle, BookOpen, GraduationCap, Settings, Brain, BarChart3, Loader2, ArrowLeft, ChevronLeft, ListChecks, Filter, Trophy, Dumbbell } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { studentApi } from '../../lib/api'
 
@@ -7,6 +7,7 @@ type Step = 'class' | 'content' | 'config' | 'practice' | 'results'
 
 interface LessonItem {
   id: number
+  topic_id: number
   title: string
 }
 
@@ -30,6 +31,7 @@ interface Question {
   options: string[]
   correct_index: number
   explanation: string
+  difficulty: string
 }
 
 export function StudentPractice() {
@@ -37,6 +39,7 @@ export function StudentPractice() {
   const [classes, setClasses] = useState<ClassItem[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const [recommendedDifficulty, setRecommendedDifficulty] = useState<'Easy' | 'Medium' | 'Hard' | null>(null)
 
   // Step 1: Selected class
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null)
@@ -58,9 +61,30 @@ export function StudentPractice() {
   // Step 5: Results
   const [score, setScore] = useState(0)
   const [correctCount, setCorrectCount] = useState(0)
+  const [showReview, setShowReview] = useState(false)
+  const [filterIncorrectOnly, setFilterIncorrectOnly] = useState(false)
+
+  // Track when the practice session started so we can persist time_spent_seconds
+  // for the learning profile's pacing trait.
+  const startTimeRef = useRef<number | null>(null)
 
   useEffect(() => {
     loadClasses()
+  }, [])
+
+  useEffect(() => {
+    // Surface the difficulty appetite recommendation as the default; the
+    // student's manual pick on the config step always wins.
+    studentApi
+      .getLearningProfile()
+      .then(res => {
+        const rec = res.data?.profile?.recommended_difficulty
+        if (rec && (rec === 'Easy' || rec === 'Medium' || rec === 'Hard')) {
+          setRecommendedDifficulty(rec)
+          setDifficulty(rec)
+        }
+      })
+      .catch(() => {})
   }, [])
 
   const loadClasses = async () => {
@@ -76,6 +100,7 @@ export function StudentPractice() {
 
   const selectedClass = classes.find(c => c.id === selectedClassId)
   const allLessons = selectedClass?.topics.flatMap(t => t.lessons) || []
+  const submitTopicId = allLessons.find(l => selectedLessonIds.includes(l.id))?.topic_id
 
   const toggleLesson = (lessonId: number) => {
     setSelectedLessonIds(prev =>
@@ -97,6 +122,7 @@ export function StudentPractice() {
       setSelectedOption(null)
       setIsSubmitted(false)
       setAnswers({})
+      startTimeRef.current = Date.now()
     } catch (err: any) {
       console.error('Error generating practice:', err)
       alert(err?.response?.data?.error || 'Failed to generate practice questions. Please try again.')
@@ -122,15 +148,38 @@ export function StudentPractice() {
       setIsSubmitted(false)
     } else {
       const total = questions.length
+      const finalAnswers = { ...answers, [currentIndex]: selectedOption }
       const correct =
-        Object.entries(answers).filter(([idx, ans]) => {
+        Object.entries(finalAnswers).filter(([idx, ans]) => {
           const q = questions[Number(idx)]
           return q && ans === q.correct_index
-        }).length +
-        (selectedOption !== null && selectedOption === questions[currentIndex].correct_index ? 1 : 0)
+        }).length
       setCorrectCount(correct)
       setScore(total > 0 ? Math.round((correct / total) * 100) : 0)
       setStep('results')
+
+      // Persist the AI-generated session (with difficulty snapshots) so the
+      // learning profile can derive difficulty appetite from practice too.
+      if (submitTopicId) {
+        const timeSpentSeconds = startTimeRef.current
+          ? Math.max(1, Math.round((Date.now() - startTimeRef.current) / 1000))
+          : undefined
+        studentApi
+          .submitPractice({
+            topic_id: submitTopicId,
+            answers: finalAnswers,
+            time_spent_seconds: timeSpentSeconds,
+            questions: questions.map((q, i) => ({
+              index: i,
+              question: q.question,
+              options: q.options,
+              correct_index: q.correct_index,
+              explanation: q.explanation ?? '',
+              difficulty: q.difficulty ?? 'medium',
+            })),
+          })
+          .catch(err => console.error('Error submitting practice:', err))
+      }
     }
   }
 
@@ -143,6 +192,7 @@ export function StudentPractice() {
     setAnswers({})
     setScore(0)
     setCorrectCount(0)
+    startTimeRef.current = null
     setStep('content')
   }
 
@@ -308,7 +358,14 @@ export function StudentPractice() {
 
               {/* Difficulty */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-3">Difficulty Level</label>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-bold text-gray-700">Difficulty Level</label>
+                  {recommendedDifficulty && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
+                      <Brain size={12} /> Recommended for you: {recommendedDifficulty}
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-3">
                   {(['Easy', 'Medium', 'Hard'] as const).map(d => (
                     <button key={d} onClick={() => setDifficulty(d)}
@@ -321,6 +378,11 @@ export function StudentPractice() {
                     </button>
                   ))}
                 </div>
+                {recommendedDifficulty && (
+                  <p className="text-xs text-gray-400 mt-2">
+                    Picking your own difficulty overrides the recommendation.
+                  </p>
+                )}
               </div>
 
               {/* Summary */}
@@ -447,7 +509,11 @@ export function StudentPractice() {
           <motion.div key="results" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
             <div className="max-w-2xl mx-auto text-center space-y-6">
               <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
-                <span className="text-4xl">{score >= 80 ? '🎉' : score >= 50 ? '💪' : '📚'}</span>
+                {score >= 80
+                  ? <Trophy className="w-12 h-12 text-emerald-600" />
+                  : score >= 50
+                    ? <Dumbbell className="w-12 h-12 text-amber-500" />
+                    : <BookOpen className="w-12 h-12 text-gray-400" />}
               </div>
               <h2 className="text-3xl font-extrabold text-gray-900">Practice Complete!</h2>
               <p className="text-gray-500 text-lg">
@@ -482,12 +548,99 @@ export function StudentPractice() {
                 </div>
 
                 <div className="flex gap-3">
+                  <button onClick={() => setShowReview(prev => !prev)}
+                    className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-bold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2">
+                    <ListChecks size={18} /> {showReview ? 'Hide Review' : 'Review Answers'}
+                  </button>
                   <button onClick={restart}
                     className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2">
                     <RefreshCw size={18} /> New Session
                   </button>
                 </div>
               </div>
+
+              {/* Review Answers */}
+              {showReview && (
+                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}
+                  className="text-left">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-extrabold text-gray-900">Answer Review</h3>
+                    <button onClick={() => setFilterIncorrectOnly(prev => !prev)}
+                      className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full transition-colors ${
+                        filterIncorrectOnly
+                          ? 'bg-rose-100 text-rose-700'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}>
+                      <Filter size={12} /> Incorrect only
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {questions.map((q, index) => {
+                      const chosen = answers[index]
+                      const isCorrect = chosen === q.correct_index
+                      if (filterIncorrectOnly && isCorrect) return null
+                      return (
+                        <div key={index} className={`bg-white rounded-2xl border p-5 shadow-sm ${
+                          isCorrect ? 'border-emerald-100' : 'border-rose-100'
+                        }`}>
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                              Question {index + 1}
+                            </span>
+                            <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
+                              isCorrect ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                            }`}>
+                              {isCorrect
+                                ? <><CheckCircle className="w-3.5 h-3.5" /> Correct</>
+                                : <><XCircle className="w-3.5 h-3.5" /> Incorrect</>}
+                            </span>
+                          </div>
+
+                          <p className="font-semibold text-gray-900 mb-4 leading-relaxed">{q.question}</p>
+
+                          <div className="space-y-2 text-sm">
+                            {/* Your answer */}
+                            <div className={`flex items-start gap-2 p-3 rounded-xl ${
+                              isCorrect ? 'bg-emerald-50' : 'bg-rose-50'
+                            }`}>
+                              <span className={`font-bold text-xs mt-0.5 shrink-0 ${
+                                isCorrect ? 'text-emerald-600' : 'text-rose-600'
+                              }`}>Your answer</span>
+                              <span className={`font-medium ${isCorrect ? 'text-emerald-800' : 'text-rose-800'}`}>
+                                {chosen !== undefined ? q.options[chosen] : 'Not answered'}
+                              </span>
+                            </div>
+
+                            {/* Correct answer (only when wrong) */}
+                            {!isCorrect && (
+                              <div className="flex items-start gap-2 p-3 rounded-xl bg-emerald-50">
+                                <span className="font-bold text-xs text-emerald-600 mt-0.5 shrink-0">Correct answer</span>
+                                <span className="font-medium text-emerald-800">{q.options[q.correct_index]}</span>
+                              </div>
+                            )}
+
+                            {/* Explanation */}
+                            {q.explanation && (
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
+                                <span className="font-bold text-xs text-gray-500 block mb-1">Why</span>
+                                <p className="text-gray-600 leading-relaxed">{q.explanation}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {filterIncorrectOnly && questions.every((q, index) => answers[index] === q.correct_index) && (
+                      <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-6 text-center">
+                        <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+                        <p className="font-bold text-emerald-800">Perfect score — nothing to review!</p>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
             </div>
           </motion.div>
         )}

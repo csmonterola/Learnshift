@@ -7,6 +7,7 @@ use App\Models\Lesson;
 use App\Models\PracticeAttempt;
 use App\Models\StudentTopicProgress;
 use App\Models\Topic;
+use App\Services\Learning\LearningProfileService;
 use App\Services\Quiz\QuestionGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,7 @@ class PracticeController extends Controller
 {
     public function __construct(
         private readonly QuestionGenerator $questionGenerator,
+        private readonly LearningProfileService $learningProfile,
     ) {}
 
     /**
@@ -67,7 +69,14 @@ class PracticeController extends Controller
 
         $student = $request->user();
         $lessonIds = $request->lesson_ids;
-        $difficulty = $request->difficulty;
+
+        // A manual student-picked difficulty always wins. The profile
+        // recommendation only applies when the student hasn't chosen one for
+        // this session — it's the default/prefill, not an override of explicit
+        // user choice. Cold-start (no recommendation) → null → mixed difficulty.
+        $difficulty = $request->difficulty
+            ?? $this->learningProfile->analyze($student)['recommended_difficulty']
+            ?? null;
 
         // Verify enrollment
         $enrolledLessonIds = DB::table('lessons')
@@ -139,6 +148,7 @@ class PracticeController extends Controller
                     'options' => $q['options'],
                     'correct_index' => $q['correct_index'],
                     'explanation' => $q['explanation'] ?? '',
+                    'difficulty' => $q['difficulty'] ?? 'medium',
                 ];
             }
         }
@@ -197,42 +207,97 @@ class PracticeController extends Controller
 
     /**
      * Submit a completed practice session.
+     *
+     * Supports two payloads:
+     *  - Legacy: a `topic_id` whose banked questions are scored server-side.
+     *  - AI-generated: an array of `questions` snapshots scored against the
+     *    `correct_index` each payload carries. A `question_meta` snapshot
+     *    ({index, difficulty, correct}) is persisted for the learning profile.
      */
     public function submit(Request $request)
     {
         $request->validate([
-            'topic_id'           => 'required|exists:topics,id',
-            'answers'            => 'required|array',
-            'time_spent_seconds' => 'nullable|integer',
+            'topic_id'                => 'sometimes|required_without:questions|exists:topics,id',
+            'questions'               => 'sometimes|array',
+            'questions.*.index'       => 'sometimes|integer',
+            'questions.*.question'    => 'sometimes|string',
+            'questions.*.options'     => 'sometimes|array|size:4',
+            'questions.*.correct_index' => 'sometimes|integer|between:0,3',
+            'questions.*.explanation' => 'sometimes|nullable|string',
+            'questions.*.difficulty'  => 'sometimes|in:easy,medium,hard',
+            'answers'                 => 'required|array',
+            'time_spent_seconds'      => 'nullable|integer',
         ]);
 
-        $topic     = Topic::with('questions')->findOrFail($request->topic_id);
-        $student   = $request->user();
-        $answers   = $request->answers;
-        $correct   = 0;
+        $student = $request->user();
+        $answers = $request->answers;
 
-        foreach ($topic->questions as $question) {
-            if (isset($answers[$question->id]) && $answers[$question->id] === $question->correct_answer) {
-                $correct++;
+        if ($request->has('questions')) {
+            $topic   = Topic::find($request->topic_id);
+            $topicId = $topic?->id;
+            $correct = 0;
+            $meta    = [];
+            $total   = 0;
+
+            foreach ($request->questions as $i => $q) {
+                $answered   = $answers[$i] ?? null;
+                $isCorrect  = $answered !== null
+                    && (int) $answered === (int) ($q['correct_index'] ?? -1);
+                $correct   += $isCorrect ? 1 : 0;
+                $total++;
+                $meta[] = [
+                    'index'      => (int) ($q['index'] ?? $i),
+                    'difficulty' => strtolower((string) ($q['difficulty'] ?? 'medium')),
+                    'correct'    => $isCorrect,
+                ];
             }
+
+            $score = $total > 0 ? round(($correct / $total) * 100) : 0;
+        } else {
+            $topic   = Topic::with('questions')->findOrFail($request->topic_id);
+            $topicId = $topic->id;
+            $correct = 0;
+            $meta    = [];
+
+            foreach ($topic->questions as $question) {
+                $answered  = $answers[$question->id] ?? null;
+                $isCorrect = $answered !== null
+                    && self::normalizeAnswer($answered) === self::normalizeAnswer($question->correct_answer);
+                if ($isCorrect) {
+                    $correct++;
+                }
+            }
+
+            $total = $topic->questions->count();
+            $score = $total > 0 ? round(($correct / $total) * 100) : 0;
         }
 
-        $total = $topic->questions->count();
-        $score = $total > 0 ? round(($correct / $total) * 100) : 0;
+        // Enrollment check: the student must belong to the class the topic
+        // belongs to. A topic without a class cannot be verified, so reject.
+        if ($topic === null || $topic->class_id === null) {
+            return response()->json(['message' => 'Topic not found.'], 404);
+        }
+        $isEnrolled = $topic->schoolClass?->students()
+            ->where('users.id', $student->id)
+            ->exists();
+        if (!$isEnrolled) {
+            return response()->json(['message' => 'You are not enrolled in this topic\'s class.'], 403);
+        }
 
         $attempt = PracticeAttempt::create([
             'student_id'          => $student->id,
-            'topic_id'            => $topic->id,
+            'topic_id'            => $topicId,
             'score'               => $score,
             'total_questions'     => $total,
             'correct_answers'     => $correct,
             'answers'             => $answers,
+            'question_meta'       => $meta ?: null,
             'time_spent_seconds'  => $request->time_spent_seconds,
         ]);
 
         // Update topic progress
         $progress = StudentTopicProgress::firstOrCreate(
-            ['student_id' => $student->id, 'topic_id' => $topic->id],
+            ['student_id' => $student->id, 'topic_id' => $topicId],
             ['status' => 'active', 'mastery_score' => 0]
         );
 
@@ -246,6 +311,11 @@ class PracticeController extends Controller
             'score'    => $score,
             'progress' => $progress->fresh(),
         ]);
+    }
+
+    private static function normalizeAnswer(mixed $value): string
+    {
+        return strtolower(trim((string) $value));
     }
 
     public function history(Request $request)

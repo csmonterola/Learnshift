@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Dumbbell, CheckCircle, AlertCircle, RefreshCw, Loader2, Sparkles } from 'lucide-react'
 import { studentApi } from '../../lib/api'
 
@@ -51,6 +51,11 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
   const [score, setScore]             = useState(0)
   const [finished, setFinished]       = useState(false)
   const [feedback, setFeedback]       = useState<PracticeFeedback[]>([])
+  const [answers, setAnswers]         = useState<Record<number, number>>({})
+
+  // Track when the practice session started so we can persist time_spent_seconds
+  // for the learning profile's pacing trait.
+  const startTimeRef = useRef<number | null>(null)
 
   const generateQuestions = async () => {
     setLoading(true)
@@ -62,10 +67,12 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
     setScore(0)
     setFinished(false)
     setFeedback([])
+    setAnswers({})
 
     try {
       const res = await studentApi.generatePracticeQuestions(lessonId)
       setQuestions(res.data.questions)
+      startTimeRef.current = Date.now()
     } catch (err: any) {
       const msg = err?.response?.data?.error || 'Failed to generate questions. Please try again.'
       setError(msg)
@@ -83,6 +90,7 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
   const handleCheck = async () => {
     if (selected === null || !q) return
 
+    setAnswers(prev => ({ ...prev, [current]: selected }))
     if (selected === q.correct_index) setScore(s => s + 1)
     setChecked(true)
   }
@@ -94,6 +102,27 @@ export default function PracticePanel({ lessonId, lessonTitle }: PracticePanelPr
       setChecked(false)
     } else {
       setFinished(true)
+
+      // Persist the AI practice session (with difficulty snapshots) so the
+      // learning profile can derive difficulty appetite from lesson practice.
+      const timeSpentSeconds = startTimeRef.current
+        ? Math.max(1, Math.round((Date.now() - startTimeRef.current) / 1000))
+        : undefined
+      studentApi
+        .submitPracticeAnswers(
+          lessonId,
+          questions.map((_, i) => answers[i] ?? 0),
+          questions.map((question, i) => ({
+            index: i,
+            question: question.question,
+            options: question.options,
+            correct_index: question.correct_index,
+            explanation: question.explanation ?? '',
+            difficulty: question.difficulty ?? 'medium',
+          })),
+          timeSpentSeconds
+        )
+        .catch(err => console.error('Error submitting lesson practice:', err))
     }
   }
 

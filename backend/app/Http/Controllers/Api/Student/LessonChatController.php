@@ -8,6 +8,7 @@ use App\Models\Lesson;
 use App\Models\LessonChatLog;
 use App\Models\MaterialImage;
 use App\Services\Ai\AiProviderFactory;
+use App\Services\Learning\LearningProfileService;
 use App\Services\Rag\EmbeddingService;
 use App\Services\Rag\LessonRetriever;
 use App\Services\Rag\RagPromptBuilder;
@@ -127,10 +128,14 @@ class LessonChatController extends Controller
             ->take(5)
             ->get();
 
+        // Resolve the learner profile so the tutor adapts explanation depth,
+        // pacing, help stance, and tone to this student's demonstrated traits.
+        $profile = app(LearningProfileService::class)->analyze($student);
+
         // Build the Mistral messages array.
         // $allImages provides captions for the system prompt's "Visual Resources Available" section.
         // Only top-5 semantically relevant images get actual image_url data sent to the vision model.
-        $messages = $this->promptBuilder->build($chunks, $history, $question, $source, $allImages);
+        $messages = $this->promptBuilder->build($chunks, $history, $question, $source, $allImages, $profile);
 
         // Call AI provider
         try {

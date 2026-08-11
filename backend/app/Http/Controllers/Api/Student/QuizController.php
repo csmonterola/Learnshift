@@ -8,6 +8,7 @@ use App\Models\Lesson;
 use App\Models\QuizResult;
 use App\Models\StudentLessonProgress;
 use App\Models\User;
+use App\Services\Learning\LearningProfileService;
 use App\Services\Quiz\QuestionGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,6 +20,7 @@ class QuizController extends Controller
 
     public function __construct(
         private readonly QuestionGenerator $questionGenerator,
+        private readonly LearningProfileService $learningProfile,
     ) {}
 
     /**
@@ -49,8 +51,12 @@ class QuizController extends Controller
             return response()->json(['error' => 'You have used all quiz attempts for this lesson.'], 403);
         }
 
+        // Adapt generation to the learner's profile. Cold-start (no
+        // recommendation yet) passes null → current mixed-difficulty behavior.
+        $recommended = $this->learningProfile->analyze($student)['recommended_difficulty'] ?? null;
+
         try {
-            $result = $this->questionGenerator->generate($lesson, 'quiz', 5);
+            $result = $this->questionGenerator->generate($lesson, 'quiz', 5, $recommended);
 
             return response()->json([
                 'questions'     => $result['questions'],
