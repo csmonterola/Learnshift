@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\Student\ProgressController as StudentProgressContro
 use App\Http\Controllers\Api\Student\SkillTreeController as StudentSkillTreeController;
 use App\Http\Controllers\Api\Student\ContactController as StudentContactController;
 use App\Http\Controllers\Api\Student\ParentLinkController;
+use App\Http\Controllers\Api\Student\LearningProfileController as StudentLearningProfileController;
 use App\Http\Controllers\Api\Teacher\ContactController as TeacherContactController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\MessageController;
@@ -85,7 +86,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('dashboard',                           [TeacherDashboardController::class, 'index']);
         Route::get('students/search',                     [TeacherStudentController::class, 'searchStudents']);
         Route::get('students',                            [TeacherStudentController::class, 'index']);
+        // Batch learning profiles must be registered BEFORE the
+        // students/{student} parameterized route.
+        Route::get('students/learning-profiles',          [TeacherStudentController::class, 'learningProfiles']);
         Route::get('students/{student}',                  [TeacherStudentController::class, 'show']);
+        Route::get('students/{student}/activities',       [TeacherStudentController::class, 'activities']);
+        Route::get('students/{student}/learning-profile', [TeacherStudentController::class, 'learningProfile']);
 
         // Teacher Class Management (exact matches before parameterized)
         Route::get('classes',                             [TeacherClassController::class, 'index']);
@@ -131,6 +137,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('classes/{classId}/posts/{postId}',    [TeacherClassPostController::class, 'update']);
         Route::delete('classes/{classId}/posts/{postId}', [TeacherClassPostController::class, 'destroy']);
         Route::post('classes/{classId}/posts/{postId}/comments', [TeacherClassPostController::class, 'comment']);
+        Route::put('classes/{classId}/posts/{postId}/comments/{commentId}', [TeacherClassPostController::class, 'updateComment']);
+        Route::delete('classes/{classId}/posts/{postId}/comments/{commentId}', [TeacherClassPostController::class, 'destroyComment']);
 
         // Contacts
         Route::get('contacts',                            [TeacherContactController::class, 'index']);
@@ -158,12 +166,16 @@ Route::middleware('auth:sanctum')->group(function () {
         // Class Posts
         Route::get('classes/{classId}/posts',             [StudentClassPostController::class, 'index']);
         Route::post('classes/{classId}/posts/{postId}/comments', [StudentClassPostController::class, 'comment']);
+        Route::put('classes/{classId}/posts/{postId}/comments/{commentId}', [StudentClassPostController::class, 'updateComment']);
+        Route::delete('classes/{classId}/posts/{postId}/comments/{commentId}', [StudentClassPostController::class, 'destroyComment']);
 
         Route::get('practice/classes',                    [PracticeController::class, 'classes']);
         Route::post('practice/generate',                  [PracticeController::class, 'generate']);
         Route::post('practice/submit',                    [PracticeController::class, 'submit']);
         Route::get('practice/history',                    [PracticeController::class, 'history']);
         Route::get('practice/{topic}/questions',          [PracticeController::class, 'getQuestions']);
+        Route::get('learning-profile',                    [StudentLearningProfileController::class, 'show']);
+        Route::post('learning-profile/self-report',       [StudentLearningProfileController::class, 'selfReport']);
         Route::post('diagnostic/start',                   [DiagnosticController::class, 'start']);
         Route::post('diagnostic/submit',                  [DiagnosticController::class, 'submit']);
         Route::post('chatbot/ask',                        [ChatbotController::class, 'ask']);

@@ -34,6 +34,8 @@ import { TeacherClassDetail } from './pages/teacher/ClassDetail'
 import { TeacherClassStudents } from './pages/teacher/ClassStudents'
 import { TeacherMessages } from './pages/teacher/Messages'
 import { TeacherStudentProfiles } from './pages/teacher/StudentProfiles'
+import { TeacherStudentDetail } from './pages/teacher/StudentDetail'
+import { TeacherStudentActivities } from './pages/teacher/StudentActivities'
 import { TeacherContentManager } from './pages/teacher/ContentManager'
 import { TeacherAIMonitoring } from './pages/teacher/AIMonitoring'
 import { TeacherSettings } from './pages/teacher/Settings'
@@ -98,6 +100,8 @@ export function App() {
               <Route path="/teacher/class/:classId/students" element={<TeacherClassStudents />} />
               <Route path="/teacher/messages" element={<TeacherMessages />} />
               <Route path="/teacher/students" element={<TeacherStudentProfiles />} />
+              <Route path="/teacher/students/:studentId" element={<TeacherStudentDetail />} />
+              <Route path="/teacher/students/:studentId/activities" element={<TeacherStudentActivities />} />
               <Route path="/teacher/content" element={<TeacherContentManager />} />
               <Route path="/teacher/ai-logs" element={<TeacherAIMonitoring />} />
               <Route path="/teacher/settings" element={<TeacherSettings />} />

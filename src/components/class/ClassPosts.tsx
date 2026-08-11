@@ -64,6 +64,10 @@ export default function ClassPosts({ classId, role }: ClassPostsProps) {
   // Comment state per post
   const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({})
   const [submittingComment, setSubmittingComment] = useState<number | null>(null)
+  const [editingComment, setEditingComment] = useState<number | null>(null)
+  const [editingCommentDraft, setEditingCommentDraft] = useState('')
+  const [savingComment, setSavingComment] = useState<number | null>(null)
+  const [deletingComment, setDeletingComment] = useState<number | null>(null)
 
   const loadPosts = () => {
     setLoading(true)
@@ -136,6 +140,45 @@ export default function ClassPosts({ classId, role }: ClassPostsProps) {
       console.error('Error adding comment:', err?.response?.data ?? err)
     } finally {
       setSubmittingComment(null)
+    }
+  }
+
+  const handleUpdateComment = async (post: ClassPostItem, comment: Comment) => {
+    const text = editingCommentDraft.trim()
+    if (!text) return
+    setSavingComment(comment.id)
+    try {
+      const api = role === 'teacher' ? teacherApi : studentApi
+      const res = await api.updateClassPostComment(classId, post.id, comment.id, text)
+      setPosts(prev => prev.map(p => p.id === post.id
+        ? { ...p, comments: (p.comments ?? []).map(c => c.id === comment.id ? { ...c, body: res.data.body } : c) }
+        : p))
+      setEditingComment(null)
+      setEditingCommentDraft('')
+    } catch (err: any) {
+      console.error('Error updating comment:', err?.response?.data ?? err)
+    } finally {
+      setSavingComment(null)
+    }
+  }
+
+  const handleDeleteComment = async (post: ClassPostItem, comment: Comment) => {
+    if (!confirm('Delete this comment?')) return
+    setDeletingComment(comment.id)
+    try {
+      const api = role === 'teacher' ? teacherApi : studentApi
+      await api.deleteClassPostComment(classId, post.id, comment.id)
+      setPosts(prev => prev.map(p => p.id === post.id
+        ? {
+            ...p,
+            comments: (p.comments ?? []).filter(c => c.id !== comment.id),
+            comments_count: Math.max(0, (p.comments_count ?? 0) - 1),
+          }
+        : p))
+    } catch (err: any) {
+      console.error('Error deleting comment:', err?.response?.data ?? err)
+    } finally {
+      setDeletingComment(null)
     }
   }
 
@@ -229,22 +272,74 @@ export default function ClassPosts({ classId, role }: ClassPostsProps) {
               </div>
 
               <div className="space-y-3">
-                {(post.comments ?? []).map(comment => (
-                  <div key={comment.id} className="flex items-start gap-3">
-                    <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-xs shrink-0">
-                      {comment.user?.name?.charAt(0) ?? '?'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-gray-700">{comment.user?.name ?? 'Unknown'}</span>
-                        {comment.user?.id === user?.id && (
-                          <span className="text-[10px] text-emerald-600 font-semibold">You</span>
+                {(post.comments ?? []).map(comment => {
+                  const isOwn = comment.user?.id === user?.id
+                  const isEditing = editingComment === comment.id
+                  return (
+                    <div key={comment.id} className="flex items-start gap-3 group">
+                      <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-xs shrink-0">
+                        {comment.user?.name?.charAt(0) ?? '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-gray-700">{comment.user?.name ?? 'Unknown'}</span>
+                          {isOwn && (
+                            <span className="text-[10px] text-emerald-600 font-semibold">You</span>
+                          )}
+                          {isOwn && !isEditing && (
+                            <span className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => { setEditingComment(comment.id); setEditingCommentDraft(comment.body) }}
+                                className="p-1 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                                title="Edit comment"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteComment(post, comment)}
+                                disabled={deletingComment === comment.id}
+                                className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                                title="Delete comment"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </span>
+                          )}
+                        </div>
+                        {isEditing ? (
+                          <div className="mt-1 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={editingCommentDraft}
+                              onChange={e => setEditingCommentDraft(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleUpdateComment(post, comment)
+                                if (e.key === 'Escape') { setEditingComment(null); setEditingCommentDraft('') }
+                              }}
+                              autoFocus
+                              className="flex-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                            />
+                            <button
+                              onClick={() => handleUpdateComment(post, comment)}
+                              disabled={savingComment === comment.id || !editingCommentDraft.trim()}
+                              className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-colors"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => { setEditingComment(null); setEditingCommentDraft('') }}
+                              className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-semibold transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-600 break-words mt-0.5">{comment.body}</p>
                         )}
                       </div>
-                      <p className="text-sm text-gray-600 break-words">{comment.body}</p>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               {/* Comment box */}

@@ -44,6 +44,8 @@ export interface ChatPanelProps {
   lessonTitle: string
   lessonId: number
   selectedMaterialIds: Set<number>
+  focusLogId?: number | null
+  onPinnedChanged?: (pinnedIds: Set<number>) => void
 }
 
 // ── SourceBadge ────────────────────────────────────────────────────
@@ -302,7 +304,7 @@ function ImageGallery({ images }: { images: ChatImage[] }) {
 }
 
 // ── ChatPanel ──────────────────────────────────────────────────────
-export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }: ChatPanelProps) {
+export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds, focusLogId, onPinnedChanged }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '0',
@@ -315,7 +317,6 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [pinnedIds, setPinnedIds] = useState<Set<number>>(new Set())
-  const [showPinned, setShowPinned] = useState(false)
   const [highlightedId, setHighlightedId] = useState<number | null>(null)
   const msgRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
@@ -336,25 +337,38 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
     try {
       if (isPinned) {
         await studentApi.unpinLessonLog(lessonId, logId)
-        setPinnedIds(prev => { const next = new Set(prev); next.delete(logId); return next })
+        setPinnedIds(prev => { const next = new Set(prev); next.delete(logId); onPinnedChanged?.(next); return next })
       } else {
         await studentApi.pinLessonLog(lessonId, logId)
-        setPinnedIds(prev => new Set(prev).add(logId))
+        setPinnedIds(prev => { const next = new Set(prev).add(logId); onPinnedChanged?.(next); return next })
       }
     } catch (error) {
       console.error('Error toggling message pin:', error)
     }
   }
 
-  const jumpToPinned = (logId: number) => {
-    setShowPinned(false)
-    const el = msgRefs.current[logId]
+  // Jump to a bookmarked message when the parent asks (focusLogId changes)
+  useEffect(() => {
+    if (focusLogId == null) return
+    const el = msgRefs.current[focusLogId]
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setHighlightedId(focusLogId)
+    const t = window.setTimeout(() => setHighlightedId(null), 2000)
+    return () => window.clearTimeout(t)
+  }, [focusLogId])
+
+  // Retry the jump once history messages finish rendering (target may not exist yet)
+  useEffect(() => {
+    if (focusLogId == null) return
+    const el = msgRefs.current[focusLogId]
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      setHighlightedId(logId)
-      window.setTimeout(() => setHighlightedId(null), 2000)
+      setHighlightedId(focusLogId)
+      const t = window.setTimeout(() => setHighlightedId(null), 2000)
+      return () => window.clearTimeout(t)
     }
-  }
+  }, [focusLogId, messages])
 
   // Load past chat logs from the API
   useEffect(() => {
@@ -455,10 +469,6 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
       ? `Using ${selectedMaterialIds.size} source${selectedMaterialIds.size === 1 ? '' : 's'}`
       : 'Using all sources'
 
-  const pinnedMessages = messages.filter(
-    m => m.role === 'assistant' && m.log_id && pinnedIds.has(m.log_id)
-  )
-
   const send = async () => {
     if (!input.trim() || loading) return
     const question = input.trim()
@@ -506,55 +516,9 @@ export default function ChatPanel({ lessonTitle, lessonId, selectedMaterialIds }
           <Bot className="w-4 h-4 text-emerald-600" />
           <span className="text-sm font-medium text-gray-700">AI Study Assistant</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
-            {sourceIndicator}
-          </span>
-          <button
-            onClick={() => setShowPinned(prev => !prev)}
-            className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
-              pinnedIds.size > 0
-                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-            }`}
-            title="Show pinned AI answers"
-          >
-            <Bookmark size={13} fill={pinnedIds.size > 0 ? 'currentColor' : 'none'} />
-            Pinned {pinnedIds.size > 0 ? `(${pinnedIds.size})` : ''}
-          </button>
-        </div>
-
-        {/* Pinned dropdown */}
-        {showPinned && (
-          <div className="absolute top-full right-0 mt-1 w-80 max-h-72 bg-white rounded-xl shadow-xl border border-gray-200 z-20 overflow-hidden flex flex-col">
-            <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-700">Saved AI answers</p>
-              <button onClick={() => setShowPinned(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="overflow-y-auto flex-1">
-              {pinnedMessages.length === 0 ? (
-                <p className="p-4 text-xs text-gray-400 text-center">
-                  No saved answers yet. Tap the bookmark on any AI reply to save it here.
-                </p>
-              ) : (
-                pinnedMessages.map(m => (
-                  <button
-                    key={m.log_id}
-                    onClick={() => jumpToPinned(m.log_id!)}
-                    className="w-full text-left px-3 py-2.5 border-b border-gray-50 hover:bg-amber-50 transition-colors"
-                  >
-                    <p className="text-xs text-gray-700 line-clamp-2">{m.content}</p>
-                    {m.source !== undefined && (
-                      <p className="text-[10px] text-gray-400 mt-1">{m.source}</p>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        )}
+        <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
+          {sourceIndicator}
+        </span>
       </div>
 
       {/* Messages */}

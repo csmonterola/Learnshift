@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { useAuth } from '../../components/auth/AuthContext'
 import { studentApi } from '../../lib/api'
 import { ParentLinkRequests } from '../../components/student/ParentLinkRequests'
+import { LearningProfileCard } from '../../components/student/LearningProfileCard'
 import {
   BookOpen, FlaskConical, Inbox, Clock, AlertCircle, Send,
   ChevronRight, Trophy, Dumbbell, MessageCircle,
@@ -66,6 +67,9 @@ export function StudentDashboard() {
       {/* Parent Link Requests */}
       <ParentLinkRequests />
 
+      {/* Learning Profile (Learner Adaptation v1) */}
+      <LearningProfileCard />
+
       {/* Hero Section */}
       <motion.section variants={itemVariants}
         className="relative bg-gradient-to-r from-emerald-800 to-emerald-600 rounded-[32px] p-8 lg:p-10 overflow-hidden shadow-sm">
@@ -74,7 +78,11 @@ export function StudentDashboard() {
         <div className="relative z-10">
           <div className="flex items-center justify-between mb-6">
             <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-bold text-white tracking-wide">
-              <span>📚</span> {currentClass ? currentClass.subject.toUpperCase() : 'NO CLASSES'}
+              {(() => {
+                const Icon = subjectIcons[currentClass?.subject ?? ''] ?? BookOpen
+                return <Icon className="w-4 h-4 text-emerald-300" />
+              })()}
+              <span>{currentClass ? currentClass.subject.toUpperCase() : 'NO CLASSES'}</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full">
@@ -84,7 +92,7 @@ export function StudentDashboard() {
             </div>
           </div>
           <h1 className="text-3xl lg:text-4xl font-extrabold text-white mb-2">
-            Welcome back, {user?.name}! 👋
+            Welcome back, {user?.name}!
           </h1>
           <p className="text-emerald-100 font-medium mb-10">
             {currentClass

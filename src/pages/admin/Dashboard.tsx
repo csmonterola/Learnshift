@@ -126,7 +126,7 @@ export function AdminDashboard() {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-extrabold text-gray-900 mb-1">
-          Welcome back, {user?.name ?? 'School Admin'} 👋
+          Welcome back, {user?.name ?? 'School Admin'}
         </h1>
         <p className="text-gray-500 text-sm">
           Here's a snapshot of your school's current activity and metrics.

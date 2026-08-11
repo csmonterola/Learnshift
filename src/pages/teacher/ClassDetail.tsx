@@ -8,7 +8,7 @@ import ClassPosts from '../../components/class/ClassPosts'
 import {
   ChevronRight, Plus, FileText, Trash2, BookOpen,
   Users, Upload, Link2, X, ChevronDown, ChevronUp, Paperclip,
-  Eye, Download, Image, Film, File, BarChart3, Megaphone,
+  Eye, Download, Image, Film, File, BarChart3,
 } from 'lucide-react'
 
 interface ClassData {
@@ -54,7 +54,7 @@ export function TeacherClassDetail() {
   const [classData, setClassData] = useState<ClassData | null>(null)
   const [classTopics, setClassTopics] = useState<TopicItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeView, setActiveView] = useState<'content' | 'progress' | 'posts'>('content')
+  const [activeView, setActiveView] = useState<'content' | 'progress'>('content')
 
   // Expanded lessons per topic
   const [expandedTopics, setExpandedTopics] = useState<Set<number>>(new Set())
@@ -245,7 +245,6 @@ export function TeacherClassDetail() {
 
   const viewTabs = [
     { id: 'content' as const, label: 'Content', icon: BookOpen },
-    { id: 'posts' as const, label: 'Posts', icon: Megaphone },
     { id: 'progress' as const, label: 'Progress', icon: BarChart3 },
   ]
 
@@ -301,6 +300,9 @@ export function TeacherClassDetail() {
       {/* ── Content View ──────────────────────────────────────── */}
       {activeView === 'content' && (
         <>
+          {/* Class announcements & posts */}
+          <ClassPosts classId={id} role="teacher" />
+
           <div className="flex justify-end mb-4">
             <button onClick={() => setShowTopicModal(true)}
               className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-5 py-3 rounded-xl transition-colors">
@@ -432,9 +434,6 @@ export function TeacherClassDetail() {
           )}
         </>
       )}
-
-      {/* ── Posts View ─────────────────────────────────────────── */}
-      {activeView === 'posts' && <ClassPosts classId={id} role="teacher" />}
 
       {/* ── Progress View ──────────────────────────────────────── */}
       {activeView === 'progress' && <ClassProgress classId={id} />}

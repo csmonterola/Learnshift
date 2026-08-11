@@ -155,7 +155,7 @@ export function ParentDashboard() {
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold mb-1">Good morning, {user?.name} 👋</h1>
+          <h1 className="text-3xl font-bold mb-1">Good morning, {user?.name}</h1>
           <p className="text-gray-500">
             {hasChildren
               ? `Here's how ${selectedChild?.name ?? 'your child'} is progressing`

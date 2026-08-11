@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { MessageCircle, Trophy, Shield, Lightbulb, Send } from 'lucide-react'
+import { MessageCircle, Trophy, Shield, Lightbulb, Send, Star } from 'lucide-react'
 
 const topics = ['Mathematics', 'Science', 'English', 'Filipino', 'General']
 
@@ -15,7 +15,7 @@ export function StudentAskTeacher() {
           <MessageCircle className="w-8 h-8 text-indigo-400 fill-indigo-100" />
           <h1 className="text-3xl font-extrabold text-gray-900">Ask Your Teacher</h1>
         </div>
-        <p className="text-gray-500">Walang judgement dito. Ask away — you're anonymous. 🎭</p>
+        <p className="text-gray-500">Walang judgement dito. Ask away — you're anonymous.</p>
       </div>
 
       {/* Banner */}
@@ -31,7 +31,9 @@ export function StudentAskTeacher() {
             <p className="font-bold text-gray-900">Ready to unlock the next topic?</p>
           </div>
         </div>
-        <div className="flex gap-1 text-orange-500 font-bold">★ ★ ★</div>
+        <div className="flex gap-1 text-orange-500">
+          {[0, 1, 2].map(i => <Star key={i} className="w-4 h-4 fill-orange-500" />)}
+        </div>
       </div>
 
       {/* Main Form Card */}
@@ -47,7 +49,7 @@ export function StudentAskTeacher() {
             </p>
           </div>
           <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center">
-            <span className="text-2xl">🎭</span>
+            <Shield className="w-6 h-6 text-indigo-500" />
           </div>
         </div>
 

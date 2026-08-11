@@ -3,10 +3,11 @@ import { studentApi } from '../../lib/api'
 import { useTheme } from '../../components/theme/ThemeProvider'
 import {
   User, Mail, Lock, Bell, Palette, Globe, Shield,
-  Save, Loader2, AlertTriangle, Check, Camera, Trash2,
+  Save, Loader2, AlertTriangle, Check, Camera, Trash2, Sparkles,
 } from 'lucide-react'
+import { LearningProfileCard } from '../../components/student/LearningProfileCard'
 
-type Tab = 'general' | 'account' | 'appearance' | 'danger'
+type Tab = 'general' | 'account' | 'learning' | 'appearance' | 'danger'
 
 export function StudentSettings() {
   const { setTheme: applyThemeToDOM } = useTheme()
@@ -135,6 +136,7 @@ export function StudentSettings() {
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'general', label: 'General', icon: <User size={18} /> },
     { id: 'account', label: 'Account', icon: <Lock size={18} /> },
+    { id: 'learning', label: 'Learning', icon: <Sparkles size={18} /> },
     { id: 'appearance', label: 'Appearance', icon: <Palette size={18} /> },
     { id: 'danger', label: 'Danger Zone', icon: <Trash2 size={18} /> },
   ]
@@ -357,6 +359,18 @@ export function StudentSettings() {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'learning' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Learning Profile</h2>
+                <p className="text-sm text-gray-500">
+                  Your profile is used to personalize quizzes, practice, and recommendations. It updates automatically as you learn.
+                </p>
+              </div>
+              <LearningProfileCard />
             </div>
           )}
 

@@ -123,8 +123,8 @@ export const studentApi = {
   // Lesson Practice (AI-generated, NOT saved)
   generatePracticeQuestions: (lessonId: number) =>
     api.post(`/student/lessons/${lessonId}/practice/generate`),
-  submitPracticeAnswers: (lessonId: number, answers: number[], questions: object[]) =>
-    api.post(`/student/lessons/${lessonId}/practice/submit`, { answers, questions }),
+  submitPracticeAnswers: (lessonId: number, answers: number[], questions: object[], timeSpentSeconds?: number) =>
+    api.post(`/student/lessons/${lessonId}/practice/submit`, { answers, questions, time_spent_seconds: timeSpentSeconds }),
 
   // Lesson Quiz (AI-generated, saved, max 3 attempts)
   generateQuizQuestions: (lessonId: number) =>
@@ -155,9 +155,18 @@ export const studentApi = {
     api.get(`/student/classes/${classId}/posts`),
   addClassPostComment: (classId: number, postId: number, body: string) =>
     api.post(`/student/classes/${classId}/posts/${postId}/comments`, { body }),
+  updateClassPostComment: (classId: number, postId: number, commentId: number, body: string) =>
+    api.put(`/student/classes/${classId}/posts/${postId}/comments/${commentId}`, { body }),
+  deleteClassPostComment: (classId: number, postId: number, commentId: number) =>
+    api.delete(`/student/classes/${classId}/posts/${postId}/comments/${commentId}`),
 
   // Progress
   getProgress: () => api.get('/student/progress'),
+
+  // Learning Profile (Learner Adaptation v1)
+  getLearningProfile: () => api.get('/student/learning-profile'),
+  submitLearningProfileSelfReport: (answers: Record<string, number>) =>
+    api.post('/student/learning-profile/self-report', { answers }),
 
   // Contacts
   getTeachers: () => api.get('/student/contacts/teachers'),
@@ -190,6 +199,11 @@ export const teacherApi = {
   dashboard: () => api.get('/teacher/dashboard'),
   students: (search?: string) => api.get('/teacher/students', { params: { search } }),
   studentProfile: (id: number) => api.get(`/teacher/students/${id}`),
+  studentActivities: (id: number, params?: { type?: string; class_id?: number; date_from?: string; date_to?: string }) =>
+    api.get(`/teacher/students/${id}/activities`, { params }),
+  studentLearningProfile: (id: number) => api.get(`/teacher/students/${id}/learning-profile`),
+  studentLearningProfiles: (ids: number[]) =>
+    api.get('/teacher/students/learning-profiles', { params: { ids: ids.join(',') } }),
   classDetail: (classId: number) => api.get(`/teacher/classes/${classId}`),
   searchStudents: (search: string) => api.get('/teacher/students/search', { params: { search } }),
   classStudents: (classId: number) => api.get(`/teacher/classes/${classId}/students`),
@@ -279,6 +293,10 @@ export const teacherApi = {
     api.delete(`/teacher/classes/${classId}/posts/${postId}`),
   addClassPostComment: (classId: number, postId: number, body: string) =>
     api.post(`/teacher/classes/${classId}/posts/${postId}/comments`, { body }),
+  updateClassPostComment: (classId: number, postId: number, commentId: number, body: string) =>
+    api.put(`/teacher/classes/${classId}/posts/${postId}/comments/${commentId}`, { body }),
+  deleteClassPostComment: (classId: number, postId: number, commentId: number) =>
+    api.delete(`/teacher/classes/${classId}/posts/${postId}/comments/${commentId}`),
 
   // Contacts
   getContacts: () => api.get('/teacher/contacts'),

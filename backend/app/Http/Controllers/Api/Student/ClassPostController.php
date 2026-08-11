@@ -7,6 +7,7 @@ use App\Models\ClassPost;
 use App\Models\PostComment;
 use App\Models\SchoolClass;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class ClassPostController extends Controller
 {
@@ -64,5 +65,54 @@ class ClassPostController extends Controller
         $comment->load('user:id,name,avatar');
 
         return response()->json($comment, 201);
+    }
+
+    /**
+     * Resolve a comment and verify the authenticated student authored it.
+     */
+    private function authorizeComment(Request $request, int $classId, int $postId, int $commentId): PostComment
+    {
+        $this->authorizeEnrollment($request, $classId);
+
+        $post = ClassPost::where('id', $postId)
+            ->where('class_id', $classId)
+            ->published()
+            ->firstOrFail();
+
+        $comment = PostComment::where('id', $commentId)
+            ->where('post_id', $post->id)
+            ->firstOrFail();
+
+        if ((int) $comment->user_id !== (int) $request->user()->id) {
+            throw new AccessDeniedHttpException('You can only edit or delete your own comments.');
+        }
+
+        return $comment;
+    }
+
+    /**
+     * PUT /api/student/classes/{classId}/posts/{post}/comments/{comment}
+     */
+    public function updateComment(Request $request, int $classId, int $postId, int $commentId)
+    {
+        $comment = $this->authorizeComment($request, $classId, $postId, $commentId);
+
+        $validated = $request->validate(['body' => 'required|string']);
+
+        $comment->update(['body' => $validated['body']]);
+        $comment->load('user:id,name,avatar');
+
+        return response()->json($comment);
+    }
+
+    /**
+     * DELETE /api/student/classes/{classId}/posts/{post}/comments/{comment}
+     */
+    public function destroyComment(Request $request, int $classId, int $postId, int $commentId)
+    {
+        $comment = $this->authorizeComment($request, $classId, $postId, $commentId);
+        $comment->delete();
+
+        return response()->json(['message' => 'Comment deleted.']);
     }
 }

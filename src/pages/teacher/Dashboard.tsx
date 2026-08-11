@@ -71,7 +71,7 @@ export function TeacherDashboard() {
       />
       <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 mb-1">Welcome back, {user?.name}! 👋</h1>
+          <h1 className="text-2xl font-bold text-slate-900 mb-1">Welcome back, {user?.name}!</h1>
           <p className="text-slate-500 text-sm">Here's a snapshot of your class's learning progress.</p>
         </div>
 

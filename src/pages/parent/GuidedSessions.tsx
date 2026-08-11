@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
-import { FilterIcon, PlayIcon, ClockIcon, CheckIcon, UserIcon } from 'lucide-react'
+import { BookOpen, FilterIcon, PlayIcon, ClockIcon, CheckIcon, UserIcon } from 'lucide-react'
 
 const stats = [
-  { icon: '📚', value: '6',      label: 'Total sessions' },
-  { icon: '✓',  value: '1',      label: 'Completed' },
-  { icon: '▶',  value: '2',      label: 'In progress' },
-  { icon: '⏱',  value: '64 mins', label: 'Total time' },
+  { icon: <BookOpen className="w-5 h-5 text-emerald-600" />, value: '6',      label: 'Total sessions' },
+  { icon: <CheckIcon className="w-5 h-5 text-emerald-600" />, value: '1',     label: 'Completed' },
+  { icon: <PlayIcon className="w-5 h-5 text-emerald-600" />, value: '2',      label: 'In progress' },
+  { icon: <ClockIcon className="w-5 h-5 text-emerald-600" />, value: '64 mins', label: 'Total time' },
 ]
 
 const filters = ['All', 'Math', 'Science', 'MAPEH']

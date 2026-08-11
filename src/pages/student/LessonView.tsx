@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { studentApi } from '../../lib/api'
@@ -10,7 +10,7 @@ import {
   ChevronRight, FileText, ExternalLink, Download, X, Eye,
   Link2, Film, Image, File, BookOpen,
   MessageCircle, Dumbbell, Trophy, Lock, CheckCircle,
-  AlertCircle, AlertTriangle, Paperclip, RefreshCw, Star,
+  AlertCircle, AlertTriangle, Paperclip, RefreshCw, Star, Bookmark,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -22,6 +22,13 @@ interface LessonData {
   links: Material[]
 }
 
+interface PinnedLog {
+  lesson_chat_log_id: number
+  question: string
+  response: string
+  source?: string | null
+}
+
 type ActiveTab = 'chat' | 'practice' | 'quiz'
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -29,6 +36,17 @@ function formatBytes(bytes?: number) {
   if (!bytes) return ''
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1048576).toFixed(1)} MB`
+}
+
+// First meaningful line of a saved AI answer, used as its title
+function answerTitle(response?: string | null): string {
+  if (!response) return 'Saved answer'
+  const line = response
+    .split('\n')
+    .map(l => l.replace(/^[#>*\-\s]+/, '').trim())
+    .find(Boolean)
+  if (!line) return 'Saved answer'
+  return line.length > 90 ? `${line.slice(0, 90)}…` : line
 }
 
 function fileIcon(type: string) {
@@ -129,6 +147,17 @@ export function StudentLessonView() {
   const [showSources, setShowSources] = useState(false)
   const [showInfo, setShowInfo]       = useState(false)
 
+  // Saved AI answers (bookmarks) shown in the right sidebar
+  const [pinnedLogs, setPinnedLogs] = useState<PinnedLog[]>([])
+  // log_id the chat should scroll to & highlight (set when sidebar item is clicked)
+  const [focusLogId, setFocusLogId] = useState<number | null>(null)
+
+  const loadPinnedLogs = useCallback((lessonId: number) => {
+    studentApi.getPinnedLessonLogs(lessonId)
+      .then(res => setPinnedLogs(res.data || []))
+      .catch(err => console.error('Error loading pinned logs:', err))
+  }, [])
+
   // Track materials with ingestion_status from SourcePanel
   const [materialsWithStatus, setMaterialsWithStatus] = useState<Material[]>([])
 
@@ -143,7 +172,8 @@ export function StudentLessonView() {
       })
       .catch(err => console.error('Error loading lesson:', err?.response?.data ?? err))
       .finally(() => setLoading(false))
-  }, [classId, topicId, lessonId])
+    loadPinnedLogs(Number(lessonId))
+  }, [classId, topicId, lessonId, loadPinnedLogs])
 
   if (loading) {
     return (
@@ -322,6 +352,8 @@ export function StudentLessonView() {
                       lessonTitle={lessonData?.title ?? 'this lesson'}
                       lessonId={Number(lessonId)}
                       selectedMaterialIds={selectedMaterialIds}
+                      focusLogId={focusLogId}
+                      onPinnedChanged={() => loadPinnedLogs(Number(lessonId))}
                     />
                   )}
                   {activeTab === 'practice' && (
@@ -371,6 +403,40 @@ export function StudentLessonView() {
                   </div>
                 </div>
               )}
+
+              {/* Saved AI Answers (bookmarks) */}
+              <div className="bg-white rounded-xl p-4 border border-gray-200">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <Bookmark className="w-3.5 h-3.5 text-amber-500" />
+                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Saved AI Answers</h4>
+                  {pinnedLogs.length > 0 && (
+                    <span className="ml-auto text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{pinnedLogs.length}</span>
+                  )}
+                </div>
+                {pinnedLogs.length === 0 ? (
+                  <p className="text-xs text-gray-400 leading-relaxed">
+                    Tap the bookmark on any AI reply in the chat to save it here for quick review.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {pinnedLogs.map(pin => (
+                      <button key={pin.lesson_chat_log_id}
+                        onClick={() => {
+                          setActiveTab('chat')
+                          // Reset then set so clicking the same item re-triggers the focus effect
+                          setFocusLogId(null)
+                          window.setTimeout(() => setFocusLogId(pin.lesson_chat_log_id), 50)
+                        }}
+                        className="w-full text-left bg-amber-50/60 hover:bg-amber-50 border border-amber-100 hover:border-amber-200 rounded-lg p-2.5 transition-colors group">
+                        <p className="text-xs font-semibold text-gray-800 leading-snug line-clamp-2">{answerTitle(pin.response)}</p>
+                        {pin.source && (
+                          <p className="text-[10px] text-gray-400 mt-1">{pin.source}</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-100">
                 <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-3">Learning Path</h4>

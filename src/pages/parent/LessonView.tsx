@@ -121,7 +121,7 @@ function ParentChatPanel({ childId, classId, topicId, lessonId, lessonTitle }: {
     {
       id: '0',
       role: 'assistant',
-      content: `Hi! I'm your AI study assistant. Ask me anything about **${lessonTitle}** — I'll help you understand what your child is learning. 📚`,
+      content: `Hi! I'm your AI study assistant. Ask me anything about **${lessonTitle}** — I'll help you understand what your child is learning.`,
     },
   ])
   const [input, setInput] = useState('')

@@ -3,7 +3,9 @@ import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { studentApi } from '../../lib/api'
 import ClassPosts from '../../components/class/ClassPosts'
-import { BookOpen, ChevronRight, FileText, CheckCircle, Trophy, Megaphone } from 'lucide-react'
+import {
+  ChevronRight, FileText, Trophy, BookOpen, GraduationCap, Megaphone, CheckCircle, ArrowRight,
+} from 'lucide-react'
 
 interface ClassData {
   id: number; name: string; grade_level: string; section: string;
@@ -22,7 +24,7 @@ export function StudentClassPage() {
   const [classData, setClassData] = useState<ClassData | null>(null)
   const [classTopics, setClassTopics] = useState<TopicItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'topics' | 'posts'>('topics')
+  const [activeTab, setActiveTab] = useState<'announcements' | 'topics'>('announcements')
 
   useEffect(() => {
     if (!classId) return
@@ -45,6 +47,11 @@ export function StudentClassPage() {
   const overallMastery = classTopics.length > 0
     ? Math.round(classTopics.reduce((sum, t) => sum + t.mastery_percentage, 0) / classTopics.length)
     : 0
+  const topicsMastered = classTopics.filter(t => t.mastery_percentage === 100).length
+  const totalLessons = classTopics.reduce((s, t) => s + t.total_lessons, 0)
+  const completedLessons = classTopics.reduce((s, t) => s + t.completed_lessons, 0)
+
+  const tabBase = 'flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all'
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -55,139 +62,153 @@ export function StudentClassPage() {
         <span className="text-gray-900 font-medium">{classData?.name || 'Class'}</span>
       </div>
 
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-extrabold text-gray-900 mb-2">{classData?.name || 'Class'}</h1>
-        <p className="text-gray-500">
-          Grade {classData?.grade_level} · Section {classData?.section} · {classData?.subject}
-        </p>
-        {classData?.teacher && (
-          <p className="text-sm text-gray-400 mt-1">Teacher: {classData.teacher.name}</p>
-        )}
+      {/* ── Header card ─────────────────────────────── */}
+      <div className="bg-gradient-to-br from-emerald-700 via-emerald-600 to-teal-500 rounded-3xl p-8 mb-8 overflow-hidden relative">
+        <div className="absolute top-0 right-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/3 translate-x-1/3 blur-2xl pointer-events-none" />
+        <div className="relative z-10 flex items-center justify-between gap-6 flex-wrap">
+          <div className="flex-1 min-w-[240px]">
+            <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-bold text-white tracking-wide mb-4">
+              <GraduationCap className="w-4 h-4" />
+              Grade {classData?.grade_level} · {classData?.subject}
+            </div>
+            <h1 className="text-3xl font-extrabold text-white mb-2 leading-tight">{classData?.name || 'Class'}</h1>
+            <p className="text-emerald-100 text-sm">
+              Section {classData?.section} · SY {classData?.school_year}
+              {classData?.teacher && <span className="hidden sm:inline"> · {classData.teacher.name}</span>}
+            </p>
+            <div className="mt-5 flex items-center gap-3 flex-wrap">
+              <div className="bg-white/15 backdrop-blur-sm rounded-xl px-4 py-2.5 flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-emerald-200" />
+                <div>
+                  <div className="text-white font-bold text-sm leading-none">{completedLessons}/{totalLessons}</div>
+                  <div className="text-emerald-100 text-[10px] font-medium mt-1">Lessons done</div>
+                </div>
+              </div>
+              <div className="bg-white/15 backdrop-blur-sm rounded-xl px-4 py-2.5 flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-emerald-200" />
+                <div>
+                  <div className="text-white font-bold text-sm leading-none">{topicsMastered}/{classTopics.length}</div>
+                  <div className="text-emerald-100 text-[10px] font-medium mt-1">Topics mastered</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Mastery ring */}
+          {classTopics.length > 0 && (
+            <div className="flex flex-col items-center shrink-0">
+              <div className="relative w-28 h-28">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="9" />
+                  <circle cx="50" cy="50" r="42" fill="none"
+                    stroke="#ffffff" strokeWidth="9" strokeLinecap="round"
+                    strokeDasharray={`${(overallMastery / 100) * 264} 264`}
+                    className="transition-all duration-1000" />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-2xl font-extrabold text-white leading-none">{overallMastery}%</span>
+                  <span className="text-[10px] text-emerald-100 font-medium mt-1">Mastery</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Overall Mastery Card */}
-      {classTopics.length > 0 && (
-        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-6 border border-emerald-100 mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-emerald-700 uppercase tracking-wide mb-1">Class Mastery</h3>
-              <p className="text-4xl font-extrabold text-emerald-600">{overallMastery}%</p>
-              <p className="text-xs text-emerald-600/70 mt-1">
-                {classTopics.filter(t => t.mastery_percentage === 100).length} of {classTopics.length} topics mastered
-              </p>
-            </div>
-            <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center">
-              <Trophy className="w-10 h-10 text-emerald-500" />
-            </div>
-          </div>
-          <div className="w-full h-3 bg-emerald-200 rounded-full overflow-hidden mt-4">
-            <div className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-              style={{ width: `${overallMastery}%` }} />
-          </div>
-        </div>
+      {/* ── Tabs ─────────────────────────────────────── */}
+      <div className="flex items-center gap-2 mb-6">
+        <button onClick={() => setActiveTab('announcements')}
+          className={`${tabBase} ${activeTab === 'announcements' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-200'}`}>
+          <Megaphone className="w-4 h-4" /> Announcements
+        </button>
+        <button onClick={() => setActiveTab('topics')}
+          className={`${tabBase} ${activeTab === 'topics' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-200'}`}>
+          <BookOpen className="w-4 h-4" /> Topics & Lessons
+        </button>
+      </div>
+
+      {/* ── Announcements tab ────────────────────────── */}
+      {activeTab === 'announcements' && (
+        <motion.div key="ann" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+          <ClassPosts classId={Number(classId)} role="student" />
+        </motion.div>
       )}
 
-      {/* View tabs */}
-      <div className="flex items-center gap-1 mb-6 border-b border-gray-200">
-        {([
-          { id: 'topics' as const, label: 'Topics', icon: BookOpen },
-          { id: 'posts' as const, label: 'Posts', icon: Megaphone },
-        ]).map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-bold transition-all border-b-2 ${
-              activeTab === tab.id
-                ? 'border-emerald-500 text-emerald-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Topics */}
-      {activeTab === 'topics' && (classTopics.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
-          <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-gray-900 mb-2">No Topics Yet</h3>
-          <p className="text-gray-500">Your teacher hasn't added any topics yet.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {classTopics.map((topic, index) => (
-            <motion.div
-              key={topic.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow"
-            >
-              <div className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${
-                        topic.mastery_percentage === 100 ? 'bg-emerald-100 text-emerald-600' :
-                        topic.mastery_percentage > 0 ? 'bg-amber-100 text-amber-600' :
-                        'bg-gray-100 text-gray-500'
-                      }`}>
-                        {topic.mastery_percentage === 100 ? <CheckCircle className="w-4 h-4" /> : index + 1}
-                      </span>
-                      <h3 className="text-xl font-bold text-gray-900">{topic.title}</h3>
-                    </div>
-                    {topic.description && (
-                      <p className="text-sm text-gray-500 ml-11 mb-2">{topic.description}</p>
-                    )}
-                    <div className="flex items-center gap-1 ml-11">
-                      <FileText className="w-3 h-3 text-gray-400" />
-                      <span className="text-xs text-gray-400">
-                        {topic.lesson_count} lesson{topic.lesson_count !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {/* Mastery indicator */}
-                    <div className="text-right">
-                      <span className={`text-sm font-bold ${
-                        topic.mastery_percentage >= 70 ? 'text-emerald-600' :
-                        topic.mastery_percentage > 0 ? 'text-amber-600' : 'text-gray-400'
+      {/* ── Topics tab ───────────────────────────────── */}
+      {activeTab === 'topics' && (
+        <motion.div key="topics" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+          {classTopics.length === 0 ? (
+            <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+              <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-bold text-gray-900 mb-2">No Topics Yet</h3>
+              <p className="text-gray-500">Your teacher hasn't added any topics yet.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {classTopics.map((topic, index) => (
+                <motion.div
+                  key={topic.id}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md hover:border-emerald-200 transition-all group flex flex-col"
+                >
+                  <div className="p-6 flex-1">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                          topic.mastery_percentage === 100 ? 'bg-emerald-100 text-emerald-600' :
+                          topic.mastery_percentage > 0 ? 'bg-amber-100 text-amber-600' :
+                          'bg-gray-100 text-gray-500'
+                        }`}>
+                          {topic.mastery_percentage === 100
+                            ? <CheckCircle className="w-5 h-5" />
+                            : <span className="text-sm font-bold">{index + 1}</span>}
+                        </span>
+                        <h3 className="font-bold text-gray-900 leading-snug truncate">{topic.title}</h3>
+                      </div>
+                      <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${
+                        topic.mastery_percentage >= 70 ? 'bg-emerald-50 text-emerald-600' :
+                        topic.mastery_percentage > 0 ? 'bg-amber-50 text-amber-600' : 'bg-gray-50 text-gray-400'
                       }`}>
                         {topic.mastery_percentage}%
                       </span>
-                      <p className="text-xs text-gray-400">{topic.completed_lessons}/{topic.total_lessons} done</p>
                     </div>
+
+                    {topic.description && (
+                      <p className="text-sm text-gray-500 mb-4 line-clamp-2">{topic.description}</p>
+                    )}
+
+                    {/* Progress */}
+                    {topic.total_lessons > 0 && (
+                      <div className="mb-2">
+                        <div className="flex justify-between items-center text-xs mb-1.5">
+                          <span className="text-gray-400">{topic.completed_lessons}/{topic.total_lessons} lessons done</span>
+                          <span className="text-gray-400">{topic.lesson_count} lesson{topic.lesson_count !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-500 ${
+                            topic.mastery_percentage >= 70 ? 'bg-emerald-400' :
+                            topic.mastery_percentage > 0 ? 'bg-amber-400' : 'bg-gray-200'
+                          }`} style={{ width: `${topic.mastery_percentage}%` }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="px-6 pb-6">
                     <Link
                       to={`/student/class/${classId}/topic/${topic.id}`}
-                      className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-5 py-2.5 rounded-xl transition-colors text-sm"
+                      className="flex items-center justify-center gap-2 w-full bg-gray-900 group-hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition-colors text-sm"
                     >
-                      Open <ChevronRight className="w-4 h-4" />
+                      Open Topic <ArrowRight className="w-4 h-4" />
                     </Link>
                   </div>
-                </div>
-                {/* Progress bar */}
-                {topic.total_lessons > 0 && (
-                  <div className="mt-4 ml-11">
-                    <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full transition-all ${
-                        topic.mastery_percentage >= 70 ? 'bg-emerald-400' :
-                        topic.mastery_percentage > 0 ? 'bg-amber-400' : 'bg-gray-200'
-                      }`} style={{ width: `${topic.mastery_percentage}%` }} />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      ))}
-
-      {/* Posts */}
-      {activeTab === 'posts' && (
-        <ClassPosts classId={Number(classId)} role="student" />
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </motion.div>
       )}
     </div>
   )
